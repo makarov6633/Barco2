@@ -157,16 +157,16 @@ const testimonials = [
 ];
 
 const galleryImages = [
-  '/EM7_2585-01.jpeg',
-  '/EM7_2942-01.jpeg',
-  '/EM7_6768-02.jpeg',
-  '/ilha-farol-arraial.jpg',
   '/WhatsApp-Image-2025-12-09-at-13.12.51.jpeg',
   '/WhatsApp-Image-2025-12-09-at-13.12.52.jpeg',
+  '/WhatsApp-Image-2025-12-09-at-13.12.52-(1).jpeg',
   '/WhatsApp-Image-2025-12-09-at-13.12.53.jpeg',
   '/WhatsApp-Image-2025-12-09-at-13.12.54.jpeg',
   '/WhatsApp-Image-2025-12-09-at-13.12.55.jpeg',
   '/WhatsApp-Image-2025-12-09-at-13.13.02.jpeg',
+  '/WhatsApp-Image-2025-12-09-at-13.13.02-(1).jpeg',
+  '/WhatsApp-Image-2025-12-09-at-13.13.02-(2).jpeg',
+  '/WhatsApp-Image-2025-12-09-at-13.13.02-(3).jpeg',
   '/WhatsApp-Image-2025-12-09-at-13.13.03.jpeg',
   '/WhatsApp-Image-2025-12-09-at-13.13.07.jpeg',
   '/WhatsApp-Image-2025-12-09-at-13.13.08.jpeg',
@@ -180,17 +180,23 @@ const galleryImages = [
   '/WhatsApp-Image-2025-12-10-at-01.18.35.jpeg',
   '/WhatsApp-Image-2025-12-10-at-01.34.08.jpeg',
   '/WhatsApp-Image-2025-12-10-at-01.43.40.jpeg',
-  '/vista-buzios.jpg',
-  '/escuna-proa.jpg',
-  '/lancha-privada-real.jpg',
+  '/WhatsApp-Image-2025-12-10-at-01.43.40-(1).jpeg',
+  '/ilha-farol-arraial.jpg',
+  '/barco-arraial.jpg',
   '/barco-cabofrio-real.jpg',
-  '/agua-liberada.jpg',
+  '/escuna-proa.jpg',
+  '/escuna-buzios.jpg',
+  '/lancha-privada-real.jpg',
   '/barco-toboagua.jpg',
   '/mergulho-arraial.jpg',
-  '/escuna-buzios.jpg',
-  '/cais-praia-anjos.jpg',
   '/quadriciclo-dunas.jpg',
   '/buggy-dunas-new.jpg',
+  '/agua-liberada.jpg',
+  '/cais-praia-anjos.jpg',
+  '/vista-buzios.jpg',
+  '/EM7_2585-01.jpeg',
+  '/EM7_2942-01.jpeg',
+  '/EM7_6768-02.jpeg',
 ];
 
 const whatsappNumber = '5522998249911';
@@ -460,8 +466,9 @@ export default function Home() {
                 src={img}
                 alt={`Galeria ${i}`}
                 fill
+                quality={100}
                 sizes="(max-width: 768px) 80vw, (max-width: 1280px) 40vw, 400px"
-                className="object-cover group-hover:scale-110 transition-transform duration-700"
+                className="object-cover saturate-125 contrast-110 brightness-105 group-hover:saturate-150 group-hover:contrast-125 group-hover:brightness-110 group-hover:scale-110 transition-all duration-700"
               />
             </div>
           ))}
