@@ -513,7 +513,7 @@ export default function Home() {
                 alt="Caleb's Tour Co."
                 width={300}
                 height={300}
-                className="w-[200px] h-[200px] md:w-[280px] md:h-[280px] lg:w-[350px] lg:h-[350px] object-contain"
+                className="rounded-full shadow-2xl w-[200px] h-[200px] md:w-[280px] md:h-[280px] lg:w-[350px] lg:h-[350px] object-cover"
                 quality={100}
                 loading="lazy"
               />
