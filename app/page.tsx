@@ -509,11 +509,11 @@ export default function Home() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12 items-center">
             <div className="flex justify-center">
               <Image
-                src="/logo-ctc.png"
+                src="/logo-caleb-tour.jpg"
                 alt="Caleb's Tour Co."
-                width={250}
-                height={250}
-                className="rounded-full shadow-2xl w-[180px] h-[180px] md:w-[250px] md:h-[250px] lg:w-[300px] lg:h-[300px]"
+                width={300}
+                height={300}
+                className="w-[200px] h-[200px] md:w-[280px] md:h-[280px] lg:w-[350px] lg:h-[350px] object-contain"
                 quality={100}
                 loading="lazy"
               />
