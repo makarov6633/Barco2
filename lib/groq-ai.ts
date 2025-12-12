@@ -373,3 +373,44 @@ function capitalize(value: string) {
   if (!value) return value;
   return value.split(' ').map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()).join(' ');
 }
+
+export async function generateBillingMessage(
+  customerName: string,
+  tourName: string,
+  paymentLink: string,
+  isLate: boolean = false
+): Promise<string> {
+  try {
+    const groq = getGroq();
+    
+    const context = isLate 
+      ? `O cliente ${customerName} esqueceu de pagar o boleto/pix do passeio "${tourName}". O prazo já venceu. Precisamos lembrar ele de forma muito amigável, sem parecer cobrança de banco. Assuma que foi esquecimento.`
+      : `O cliente ${customerName} reservou o passeio "${tourName}" mas ainda não pagou. Precisamos enviar o link de pagamento de forma simpática.`;
+
+    const prompt = `
+    Você é a Ana, da Caleb's Tour (agência de passeios).
+    Seu tom é: Amigável, descontraído, carioca, prestativo (use emojis).
+    
+    Tarefa: ${context}
+    
+    A mensagem deve ser CURTA (máximo 3 frases) e incluir o link de pagamento: ${paymentLink}
+    
+    Exemplo de tom desejado: "Oi Fulano! Tudo bem? Vi que o vencimento passou, deve ter sido a correria né? Segue aqui pra facilitar..."
+    `;
+
+    const completion = await groq.chat.completions.create({
+      model: REASONING_MODEL,
+      messages: [
+         { role: 'system', content: prompt }
+      ],
+      temperature: 0.7,
+      max_tokens: 300
+    });
+
+    return completion.choices[0]?.message?.content || 
+      `Oi ${customerName}! Tudo bem? Vi que ficou pendente o pagto do ${tourName}. Segue o link: ${paymentLink}`;
+  } catch (error) {
+    console.error('Erro ao gerar mensagem de cobrança:', error);
+    return `Oi ${customerName}, enviando o link de pagamento do ${tourName}: ${paymentLink}`;
+  }
+}
