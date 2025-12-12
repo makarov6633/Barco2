@@ -1,11 +1,18 @@
 import Groq from 'groq-sdk';
 import { FAQ_GENERAL, TOURS_INFO, CALEB_INFO, FAQ_PERFIL, FAQ_TEMPORADA } from './knowledge-base';
 
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY
-});
+let cachedGroq: Groq | null = null;
 
-const REASONING_MODEL = process.env.GROQ_REASONING_MODEL || 'deepseek-r1-distill-llama-70b';
+function getGroq() {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    throw new Error('GROQ_API_KEY environment variable is missing or empty.');
+  }
+  cachedGroq ||= new Groq({ apiKey });
+  return cachedGroq;
+}
+
+const REASONING_MODEL = process.env.GROQ_REASONING_MODEL || 'openai/gpt-oss-120b';
 const INTENT_MODEL = process.env.GROQ_INTENT_MODEL || 'openai/gpt-oss-120b';
 
 const SYSTEM_PROMPT = `Você é a Ana, atendente estrela da Caleb's Tour (CTC) no WhatsApp.
@@ -121,6 +128,7 @@ export async function generateAIResponse(
       content: friendlyName ? `${friendlyName}: ${userMessage}` : userMessage
     });
 
+    const groq = getGroq();
     const completion = await groq.chat.completions.create({
       model: REASONING_MODEL,
       messages,
@@ -154,6 +162,7 @@ export async function detectIntentWithAI(message: string): Promise<{
   }
 
   try {
+    const groq = getGroq();
     const completion = await groq.chat.completions.create({
       model: INTENT_MODEL,
       messages: [
@@ -164,7 +173,8 @@ export async function detectIntentWithAI(message: string): Promise<{
       max_tokens: 220
     });
 
-    const parsed = parseIntentResponse(completion.choices[0]?.message?.content);
+    const content = completion.choices[0]?.message?.content ?? undefined;
+    const parsed = parseIntentResponse(content);
     if (parsed) {
       return sanitizeIntentPayload(parsed, trimmed);
     }
