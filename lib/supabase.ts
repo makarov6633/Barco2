@@ -1,9 +1,18 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+let cachedSupabase: SupabaseClient | null = null;
 
-export const supabase = createClient(supabaseUrl, supabaseKey);
+function getSupabase() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error('Supabase env vars missing: NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required.');
+  }
+
+  cachedSupabase ||= createClient(supabaseUrl, supabaseKey);
+  return cachedSupabase;
+}
 
 export interface Cliente {
   id: string;
@@ -77,6 +86,8 @@ export interface ConversationContext {
 
 export async function getOrCreateCliente(telefone: string, nome?: string): Promise<Cliente | null> {
   try {
+    const supabase = getSupabase();
+
     const { data, error } = await supabase
       .from('clientes')
       .select('*')
@@ -109,6 +120,8 @@ export async function getOrCreateCliente(telefone: string, nome?: string): Promi
 
 export async function getAllPasseios(): Promise<Passeio[]> {
   try {
+    const supabase = getSupabase();
+
     const { data, error } = await supabase
       .from('passeios')
       .select('*')
@@ -123,6 +136,8 @@ export async function getAllPasseios(): Promise<Passeio[]> {
 
 export async function createReserva(reserva: Omit<Reserva, 'id' | 'created_at'>): Promise<Reserva | null> {
   try {
+    const supabase = getSupabase();
+
     const { data, error } = await supabase
       .from('reservas')
       .insert(reserva)
@@ -138,6 +153,8 @@ export async function createReserva(reserva: Omit<Reserva, 'id' | 'created_at'>)
 
 export async function getConversationContext(telefone: string): Promise<ConversationContext> {
   try {
+    const supabase = getSupabase();
+
     const { data, error } = await supabase
       .from('conversation_contexts')
       .select('*')
@@ -182,6 +199,8 @@ export async function getConversationContext(telefone: string): Promise<Conversa
 
 export async function saveConversationContext(context: ConversationContext): Promise<void> {
   try {
+    const supabase = getSupabase();
+
     const { data: existing } = await supabase
       .from('conversation_contexts')
       .select('telefone')
