@@ -65,7 +65,7 @@ const tours = [
     id: 'mergulho-snorkel',
     title: 'Mergulho de Snorkel',
     subtitle: 'ARRAIAL DO CABO/RJ',
-    image: '/passeio-mergulho-tartaruga.jpg',
+    image: '/passeio-mergulho-snorkel.jpg',
     description: 'Equipamento Instrutor',
     duration: '1h30',
     difficulty: 'Fácil',
@@ -76,18 +76,18 @@ const tours = [
     whatsappMessage: 'Olá! Quero agendar o Mergulho de Snorkel!'
   },
   {
-    id: 'arubinha-buggy',
-    title: 'Arubinha de Buggy',
+    id: 'paramotor',
+    title: 'Voo de Paramotor',
     subtitle: 'ARRAIAL DO CABO/RJ',
-    image: '/buggy-igreja.jpeg',
-    description: 'Fotos Gratuitas Parada para Mergulho',
-    duration: '7 horas',
+    image: '/passeio-paramotor.jpg',
+    description: 'Vistas aéreas com gravação em vídeo para casais ou solo',
+    duration: '20 min',
     difficulty: 'Aventura',
-    startingAt: 'R$ 1.200,00',
+    startingAt: 'R$ 400,00',
     oldPrice: '',
-    unit: 'buggy',
+    unit: 'pessoa',
     badge: 'OFERTA IMPERDÍVEL',
-    whatsappMessage: 'Olá! Quero reservar a Arubinha de Buggy!'
+    whatsappMessage: 'Olá! Quero agendar o Voo de Paramotor!'
   },
   {
     id: 'jet-ski',
@@ -174,8 +174,8 @@ const galleryImages = [
   '/drone-vista.jpeg',
   '/familia-praia.jpeg',
   '/ponta-arraial.jpeg',
-  '/passeio-mergulho-tartaruga.jpg',
-  '/buggy-igreja.jpeg',
+  '/passeio-mergulho-snorkel.jpg',
+  '/passeio-paramotor.jpg',
   '/buggy-lagoa.jpeg',
 ];
 
