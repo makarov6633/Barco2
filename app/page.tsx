@@ -337,12 +337,12 @@ export default function Home() {
                 )}
                 
                 <div className="flex justify-center pt-8 pb-4">
-                  <div className="relative w-48 h-48 rounded-full overflow-hidden ring-8 ring-white/30 shadow-2xl">
+                  <div className="relative w-56 h-56 md:w-64 md:h-64 rounded-full overflow-hidden ring-8 ring-white/30 shadow-2xl">
                     <Image
                       src={tour.image}
                       alt={tour.title}
                       fill
-                      sizes="200px"
+                      sizes="(max-width: 768px) 224px, 256px"
                       className="object-cover"
                       quality={100}
                     />
