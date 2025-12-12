@@ -8,7 +8,7 @@ const tours = [
   {
     id: 'barco-arraial',
     title: 'Passeio de Barco - Arraial',
-    image: '/ilha-farol-arraial.jpg',
+    image: '/passeio-barco-arraial.jpg',
     description: 'O clássico Caribe Brasileiro. Água liberada e roteiro completo por 3h30 a 4h.',
     tiers: [
       { name: 'Tradicional', price: 'R$ 150', detail: 'Frutas + Água' },
@@ -26,7 +26,7 @@ const tours = [
   {
     id: 'barco-buzios',
     title: 'Escuna - Búzios',
-    image: '/escuna-buzios.jpg',
+    image: '/passeio-escuna-buzios.jpg',
     description: 'Visite 12 praias e 3 ilhas na charmosa Armação dos Búzios.',
     price: 'Consulte',
     features: [
@@ -54,7 +54,7 @@ const tours = [
   {
     id: 'quadriciclo',
     title: 'Quadriciclo',
-    image: '/passeio-quadriciclo.jpg',
+    image: '/passeio-quadriciclo-grupo.jpg',
     description: 'Adrenalina nas dunas e lagoas. Fotos e vídeos GoPro inclusos!',
     price: 'Consulte',
     features: [
@@ -67,7 +67,7 @@ const tours = [
   {
     id: 'buggy',
     title: 'Passeio de Buggy',
-    image: '/passeio-buggy.jpg',
+    image: '/passeio-buggy-praia.jpg',
     description: 'Passeio 4x4 panorâmico com paradas para banho, fotos e mirantes incríveis.',
     price: 'Consulte',
     features: ['Roteiro: Prainha, Pontal, lagoas e Praia Grande', 'Ideal para curtir o pôr do sol (tarde)', 'Duração média: 2h com guia'],
@@ -76,7 +76,7 @@ const tours = [
   {
     id: 'mergulho',
     title: 'Mergulho de Batismo',
-    image: '/passeio-mergulho-snorkel-tartaruga.jpg',
+    image: '/passeio-mergulho-cilindro.jpg',
     description: 'Experiência subaquática segura. Não precisa saber nadar!',
     price: 'Consulte',
     features: ['Instrutor exclusivo', 'Fotos subaquáticas inclusas', 'Idade mínima: 10 anos (valor integral)'],
@@ -86,7 +86,7 @@ const tours = [
   {
     id: 'jet-ski',
     title: 'Jet Ski',
-    image: '/WhatsApp-Image-2025-12-10-at-01.34.08.jpeg',
+    image: '/passeio-jet-ski.jpg',
     description: 'Velocidade e liberdade nas águas turquesas.',
     price: 'Consulte',
     features: ['Equipamentos novos e roteiro pelo Canal Itajuru', 'Colete e instrutor incluso', 'Piloto mínimo 18 anos | passageiro a partir de 10 anos'],
@@ -105,7 +105,7 @@ const tours = [
   {
     id: 'lancha',
     title: 'Lancha Privada',
-    image: '/954288_2dc6b461184a4c15a1098187cfbf6eb7~mv2.avif',
+    image: '/passeio-lancha-privada.jpg',
     description: 'Experiência VIP: lancha exclusiva para seu grupo, com conforto, privacidade e roteiro personalizado.',
     price: 'Sob consulta',
     features: ['Churrasqueira a bordo (carvão + gelo cortesia)', 'Ducha de água doce, snorkel e tapete flutuante', 'Karaokê/Spotify + balanço instagramável no 2º piso (quando disponível)'],
@@ -141,19 +141,19 @@ const galleryImages = [
   '/EM7_2942-01.jpeg',
   '/EM7_7961-01 (1).jpeg',
   '/EM7_6768-02.jpeg',
-  '/ilha-farol-arraial.jpg',
+  '/passeio-barco-arraial.jpg',
   '/vista-buzios.jpg',
   '/escuna-proa.jpg',
-  '/lancha-privada-real.jpg',
+  '/passeio-lancha-privada.jpg',
   '/barco-cabofrio-real.jpg',
   '/agua-liberada.jpg',
   '/barco-toboagua.jpg',
-  '/passeio-mergulho-snorkel-tartaruga.jpg',
-  '/escuna-buzios.jpg',
+  '/passeio-mergulho-cilindro.jpg',
+  '/passeio-escuna-buzios.jpg',
   '/cais-praia-anjos.jpg',
-  '/passeio-quadriciclo.jpg',
-  '/passeio-buggy.jpg',
-  '/WhatsApp-Image-2025-12-10-at-01.34.08.jpeg',
+  '/passeio-quadriciclo-grupo.jpg',
+  '/passeio-buggy-praia.jpg',
+  '/passeio-jet-ski.jpg',
   '/WhatsApp-Image-2025-12-10-at-01.43.40.jpeg',
 ];
 
