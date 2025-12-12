@@ -54,7 +54,7 @@ const tours = [
   {
     id: 'quadriciclo',
     title: 'Quadriciclo',
-    image: '/quadriciclo-dunas.jpg',
+    image: '/passeio-quadriciclo.jpg',
     description: 'Adrenalina nas dunas e lagoas. Fotos e vídeos GoPro inclusos!',
     price: 'Consulte',
     features: [
@@ -67,7 +67,7 @@ const tours = [
   {
     id: 'buggy',
     title: 'Passeio de Buggy',
-    image: '/buggy-dunas-new.jpg',
+    image: '/passeio-buggy.jpg',
     description: 'Passeio 4x4 panorâmico com paradas para banho, fotos e mirantes incríveis.',
     price: 'Consulte',
     features: ['Roteiro: Prainha, Pontal, lagoas e Praia Grande', 'Ideal para curtir o pôr do sol (tarde)', 'Duração média: 2h com guia'],
@@ -76,7 +76,7 @@ const tours = [
   {
     id: 'mergulho',
     title: 'Mergulho de Batismo',
-    image: '/mergulho-arraial.jpg',
+    image: '/passeio-mergulho-snorkel-tartaruga.jpg',
     description: 'Experiência subaquática segura. Não precisa saber nadar!',
     price: 'Consulte',
     features: ['Instrutor exclusivo', 'Fotos subaquáticas inclusas', 'Idade mínima: 10 anos (valor integral)'],
@@ -148,11 +148,11 @@ const galleryImages = [
   '/barco-cabofrio-real.jpg',
   '/agua-liberada.jpg',
   '/barco-toboagua.jpg',
-  '/mergulho-arraial.jpg',
+  '/passeio-mergulho-snorkel-tartaruga.jpg',
   '/escuna-buzios.jpg',
   '/cais-praia-anjos.jpg',
-  '/quadriciclo-dunas.jpg',
-  '/buggy-dunas-new.jpg',
+  '/passeio-quadriciclo.jpg',
+  '/passeio-buggy.jpg',
   '/WhatsApp-Image-2025-12-10-at-01.34.08.jpeg',
   '/WhatsApp-Image-2025-12-10-at-01.43.40.jpeg',
 ];
