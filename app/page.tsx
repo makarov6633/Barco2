@@ -157,6 +157,20 @@ const testimonials = [
 ];
 
 const galleryImages = [
+  '/wa-2025-12-12-1542-25-01.jpeg',
+  '/wa-2025-12-12-1542-27-01.jpeg',
+  '/wa-2025-12-12-1542-28-02.jpeg',
+  '/wa-2025-12-12-1542-29-01.jpeg',
+  '/wa-2025-12-12-1542-30-01.jpeg',
+  '/wa-2025-12-12-1542-31-01.jpeg',
+  '/wa-2025-12-12-1542-32-03-01.jpeg',
+  '/wa-2025-12-12-1542-34-01-02.jpeg',
+  '/wa-2025-12-12-1542-34-03.jpeg',
+  '/wa-2025-12-12-1542-37-01.jpeg',
+  '/wa-2025-12-12-1542-43-01.jpeg',
+  '/wa-2025-12-12-1542-54-01-01.jpeg',
+  '/wa-2025-12-12-1542-55.jpeg',
+  '/whisk-c9e8337b.jpeg',
   '/galeria-passeio-barco.jpeg',
   '/galeria-grupo-barco.jpeg',
   '/galeria-barco-mar.jpeg',
