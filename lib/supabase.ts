@@ -40,6 +40,19 @@ export interface Reserva {
   created_at?: string;
 }
 
+export interface MemoryEntry {
+  id: string;
+  type: 'profile' | 'preference' | 'booking' | 'history';
+  value: string;
+  createdAt: string;
+  tags?: string[];
+}
+
+export interface ConversationMetadata {
+  memories?: MemoryEntry[];
+  [key: string]: any;
+}
+
 export interface ConversationContext {
   telefone: string;
   nome?: string;
@@ -48,15 +61,18 @@ export interface ConversationContext {
   flowStep?: string;
   tempData?: {
     passeio?: string;
+    passeioId?: string;
     data?: string;
     numPessoas?: number;
     cpf?: string;
     email?: string;
+    optionList?: string[];
+    optionIds?: string[];
   };
   lastIntent?: string;
   lastMessage?: string;
   lastMessageTime?: string;
-  metadata?: any;
+  metadata?: ConversationMetadata;
 }
 
 export async function getOrCreateCliente(telefone: string, nome?: string): Promise<Cliente | null> {
@@ -129,6 +145,11 @@ export async function getConversationContext(telefone: string): Promise<Conversa
       .single();
 
     if (data) {
+      const metadata: ConversationMetadata = data.metadata || {};
+      if (!Array.isArray(metadata.memories)) {
+        metadata.memories = [];
+      }
+
       return {
         telefone: data.telefone,
         nome: data.nome,
@@ -139,7 +160,7 @@ export async function getConversationContext(telefone: string): Promise<Conversa
         lastIntent: data.last_intent,
         lastMessage: data.last_message,
         lastMessageTime: data.last_message_time,
-        metadata: data.metadata || {}
+        metadata
       };
     }
 
@@ -147,14 +168,14 @@ export async function getConversationContext(telefone: string): Promise<Conversa
       telefone,
       conversationHistory: [],
       tempData: {},
-      metadata: {}
+      metadata: { memories: [] }
     };
   } catch (error) {
     return {
       telefone,
       conversationHistory: [],
       tempData: {},
-      metadata: {}
+      metadata: { memories: [] }
     };
   }
 }
@@ -167,6 +188,12 @@ export async function saveConversationContext(context: ConversationContext): Pro
       .eq('telefone', context.telefone)
       .single();
 
+    const metadata: ConversationMetadata = context.metadata || {};
+    if (!Array.isArray(metadata.memories)) {
+      metadata.memories = [];
+    }
+    context.metadata = metadata;
+
     const payload = {
       telefone: context.telefone,
       nome: context.nome,
@@ -177,7 +204,7 @@ export async function saveConversationContext(context: ConversationContext): Pro
       last_intent: context.lastIntent,
       last_message: context.lastMessage,
       last_message_time: context.lastMessageTime || new Date().toISOString(),
-      metadata: context.metadata
+      metadata
     };
 
     if (existing) {

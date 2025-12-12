@@ -15,7 +15,11 @@ const tours = [
       { name: 'Open Bar', price: 'R$ 180', detail: 'Água, Refri, Caipirinha' },
       { name: 'Open Food', price: 'R$ 280', detail: 'Tudo + Churrasco' },
     ],
-    features: ['Ilha do Farol, Prainhas, Gruta Azul', 'Embarcação com toboágua e banheiro', 'Check-in 10:30 | Saída 11:00'],
+    features: [
+      'Recepção com frutas e água + bebidas liberadas conforme plano',
+      'Taxa municipal R$ 10 (dinheiro) e bote de apoio para os desembarques',
+      'Wi-Fi, banheiro, salva-vidas e toboágua em dois andares'
+    ],
     childPolicy: '0-4 anos: Grátis | 5-7 anos: Meia',
     whatsappMessage: 'Olá! Quero agendar o Passeio de Barco em Arraial!'
   },
@@ -25,8 +29,12 @@ const tours = [
     image: '/escuna-buzios.jpg',
     description: 'Visite 12 praias e 3 ilhas na charmosa Armação dos Búzios.',
     price: 'Consulte',
-    features: ['João Fernandes, Azeda, Tartaruga', 'Paradas para mergulho', 'Duração: 2h30'],
-    childPolicy: '0-4 anos: Grátis',
+    features: [
+      '12 praias + 3 ilhas com 3 paradas de mergulho (Ilha Branca, Caboclo, Ilha Feia)',
+      'Taxa portuária R$ 8 em dinheiro e animação guiada a bordo',
+      'Duração média: 2h30'
+    ],
+    childPolicy: '0-5 anos: Grátis | 6-10 anos: Meia',
     whatsappMessage: 'Olá! Quero saber sobre a Escuna em Búzios!'
   },
   {
@@ -35,8 +43,12 @@ const tours = [
     image: '/barco-cabofrio-real.jpg',
     description: 'Explore a história e as águas cristalinas de Cabo Frio.',
     price: 'Consulte',
-    features: ['Ilha do Japonês, Forte São Mateus', 'Ilha dos Papagaios (Mergulho)', 'Duração: 2h30 a 3h'],
-    childPolicy: '0-4 anos: Grátis',
+    features: [
+      'Boulevard Canal, Ilha do Japonês, Praia do Forte e Forte São Mateus',
+      '2 paradas para mergulho (Ilha dos Papagaios e Canto do Forte)',
+      'Duração: 2h30 a 3h com embarque no canal'
+    ],
+    childPolicy: '0-5 anos: Grátis | 6-10 anos: Meia',
     whatsappMessage: 'Olá! Quero saber sobre o Barco em Cabo Frio!'
   },
   {
@@ -45,16 +57,20 @@ const tours = [
     image: '/quadriciclo-dunas.jpg',
     description: 'Adrenalina nas dunas e lagoas. Fotos e vídeos GoPro inclusos!',
     price: 'Consulte',
-    features: ['Roteiro: Lagoa Vermelha, Praia Grande', 'Duração: 2h30 com guia', 'CNH B obrigatória para piloto'],
+    features: [
+      'Check-in Praça Lions Club nº17 (Praia Grande) com tolerância de 15 min',
+      'Roteiro: Pedreira, Lagoa Vermelha, Praia Grande, Pontal do Atalaia',
+      'Uso obrigatório de sapato fechado e CNH; aluguel de crocs R$15'
+    ],
     whatsappMessage: 'Olá! Quero agendar o Quadriciclo!'
   },
   {
     id: 'buggy',
     title: 'Passeio de Buggy',
     image: '/buggy-dunas-new.jpg',
-    description: 'Passeio panorâmico com paradas para banho e fotos.',
+    description: 'Passeio 4x4 panorâmico com paradas para banho, fotos e mirantes incríveis.',
     price: 'Consulte',
-    features: ['Prainha, Praia do Pontal, Lagoa', 'Pôr do sol na Praia Grande', 'Duração: 2h'],
+    features: ['Roteiro: Prainha, Pontal, lagoas e Praia Grande', 'Ideal para curtir o pôr do sol (tarde)', 'Duração média: 2h com guia'],
     whatsappMessage: 'Olá! Quero reservar o Passeio de Buggy!'
   },
   {
@@ -63,7 +79,7 @@ const tours = [
     image: '/mergulho-arraial.jpg',
     description: 'Experiência subaquática segura. Não precisa saber nadar!',
     price: 'Consulte',
-    features: ['Instrutor exclusivo', 'Fotos subaquáticas inclusas', 'Idade mínima: 10 anos'],
+    features: ['Instrutor exclusivo', 'Fotos subaquáticas inclusas', 'Idade mínima: 10 anos (valor integral)'],
     childPolicy: 'Integral para todas as idades',
     whatsappMessage: 'Olá! Quero agendar o Mergulho!'
   },
@@ -73,70 +89,41 @@ const tours = [
     image: '/WhatsApp-Image-2025-12-10-at-01.34.08.jpeg',
     description: 'Velocidade e liberdade nas águas turquesas.',
     price: 'Consulte',
-    features: ['Equipamentos novos', 'Colete e instrutor incluso', 'Roteiro pelo Canal Itajuru'],
+    features: ['Equipamentos novos e roteiro pelo Canal Itajuru', 'Colete e instrutor incluso', 'Piloto mínimo 18 anos | passageiro a partir de 10 anos'],
     whatsappMessage: 'Olá! Quero saber sobre o Jet Ski!'
   },
   {
     id: 'rio-de-janeiro',
     title: 'City Tour Rio',
     image: '/rio-cristo.jpg',
-    description: 'Conheça a Cidade Maravilhosa: Cristo Redentor e Pão de Açúcar.',
+    description: 'Bate-volta completo pela Cidade Maravilhosa, com roteiro clássico e paradas estratégicas.',
     price: 'Consulte',
-    features: ['Cristo Redentor', 'Transporte executivo', 'Guia credenciado'],
-    childPolicy: '0-6 anos: Grátis',
+    features: ['Cristo Redentor, Pão de Açúcar e pontos clássicos', 'Copacabana, Ipanema, Leblon e parada para almoço', 'Transporte executivo + guia credenciado'],
+    childPolicy: '0-6 anos: Grátis (6 paga almoço) | 7+: Integral',
     whatsappMessage: 'Olá! Quero saber sobre o Tour Rio de Janeiro!'
   },
   {
     id: 'lancha',
     title: 'Lancha Privada',
     image: '/954288_2dc6b461184a4c15a1098187cfbf6eb7~mv2.avif',
-    description: 'Exclusividade e conforto para seu grupo fechado.',
+    description: 'Experiência VIP: lancha exclusiva para seu grupo, com conforto, privacidade e roteiro personalizado.',
     price: 'Sob consulta',
-    features: ['Roteiro personalizado', 'Privacidade total', 'Ideal para grupos e eventos'],
+    features: ['Churrasqueira a bordo (carvão + gelo cortesia)', 'Ducha de água doce, snorkel e tapete flutuante', 'Karaokê/Spotify + balanço instagramável no 2º piso (quando disponível)'],
     whatsappMessage: 'Olá! Quero saber sobre a Lancha Privada!'
   },
 ];
 
 const moreServices = [
-  { name: 'Catamarã / Black Diamond', desc: 'Embarcações festivas e diferenciadas' },
-  { name: 'UTV 4x4', desc: 'Veículo potente para trilhas' },
-  { name: 'Jeep Tour', desc: 'Passeio 4x4 coletivo ou privado' },
-  { name: 'Canoa Havaiana', desc: 'Experiência de remo em equipe' },
-  { name: 'Caiaque Transparente', desc: 'Fotos incríveis com fundo visível' },
-  { name: 'Aula de Surf', desc: 'Para iniciantes nas praias da região' },
-  { name: 'Voo de Paramotor', desc: 'Vista aérea panorâmica' },
-  { name: 'Hospedagem', desc: 'Casas e pousadas parceiras' },
+  { name: 'Catamarã / Black Diamond', desc: 'Festivais a bordo com karaokê, DJ e roteiros customizados' },
+  { name: 'UTV 4x4', desc: 'Trilhas agressivas com guia, equipamentos e muita adrenalina' },
+  { name: 'Jeep Tour', desc: 'Explora Passagem, praias e dunas em 4x4 coletivo ou privado' },
+  { name: 'Canoa Havaiana', desc: 'Remada guiada no Caribe Brasileiro com fotos no nascer/pôr do sol' },
+  { name: 'Caiaque Transparente', desc: 'Registro fotográfico com fundo cristalino nas Prainhas' },
+  { name: 'Aula de Surf', desc: 'Instrutores credenciados nas ondas de Cabo Frio/Arraial' },
+  { name: 'Voo de Paramotor', desc: 'Vistas aéreas com gravação em vídeo para casais ou solo' },
+  { name: 'Hospedagem', desc: 'Casas e pousadas parceiras selecionadas pela CTC' },
 ];
 
-const meetingPoints = [
-  {
-    location: 'Arraial do Cabo',
-    address: 'Marina dos Pescadores - Cais da Praia dos Anjos',
-    services: ['Passeio de Barco', 'Mergulho de Batismo'],
-    checkIn: '10:30',
-    departure: '11:00',
-    notes: 'Taxa de embarque R$10 (dinheiro). Isentos: crianças até 5 anos e idosos 60+.',
-    mapLink: 'https://www.google.com/maps/dir/?api=1&destination=Marina+dos+Pescadores,+Arraial+do+Cabo,+RJ'
-  },
-  {
-    location: 'Búzios',
-    address: 'Orla Bardot - Praia da Armação',
-    services: ['Escuna Búzios'],
-    checkIn: '10:00',
-    departure: '10:30',
-    notes: 'Embarque próximo à estátua de Brigitte Bardot.',
-    mapLink: 'https://www.google.com/maps/dir/?api=1&destination=Orla+Bardot,+Armação+dos+Búzios,+RJ'
-  },
-  {
-    location: 'Cabo Frio',
-    address: 'Canal Itajuru - Próx. Ponte Feliciano Sodré',
-    services: ['Barco Cabo Frio', 'Jet Ski', 'Quadriciclo', 'Buggy'],
-    checkIn: 'Variável',
-    departure: 'Variável',
-    notes: 'Transfer disponível: R$15 ida ou R$15 volta (apenas bairros de Cabo Frio).',
-    mapLink: 'https://www.google.com/maps/dir/?api=1&destination=Ponte+Feliciano+Sodré,+Cabo+Frio,+RJ'
-  },
-];
 
 const testimonials = [
   { name: 'Rafael Souza', city: 'Belo Horizonte', image: null, text: 'Passeio sensacional! A equipe é muito animada e as praias são surreais de lindas. Vale cada centavo.' },
@@ -205,7 +192,8 @@ export default function Home() {
               height={45}
               className="rounded-full ring-2 ring-white/30 w-10 h-10 md:w-[50px] md:h-[50px]"
               quality={100}
-              unoptimized
+              loading="eager"
+              priority
             />
             <span className={`font-bold text-base md:text-lg hidden sm:block transition-colors font-heading tracking-wide ${scrolled ? 'text-[#0a4d54]' : 'text-white'}`}>
               Caleb&apos;s Tour
@@ -233,9 +221,6 @@ export default function Home() {
             <Link href="#passeios" className={`text-sm font-medium transition-colors hover:text-[#25D366] ${scrolled ? 'text-gray-700' : 'text-white'}`}>
               Passeios
             </Link>
-            <Link href="#locais" className={`text-sm font-medium transition-colors hover:text-[#25D366] ${scrolled ? 'text-gray-700' : 'text-white'}`}>
-              Locais
-            </Link>
             <Link href="#depoimentos" className={`text-sm font-medium transition-colors hover:text-[#25D366] ${scrolled ? 'text-gray-700' : 'text-white'}`}>
               Depoimentos
             </Link>
@@ -258,9 +243,6 @@ export default function Home() {
               </Link>
               <Link href="#passeios" onClick={() => setMobileMenuOpen(false)} className="py-3 px-4 text-gray-700 font-medium hover:bg-gray-50 rounded-lg">
                 Passeios
-              </Link>
-              <Link href="#locais" onClick={() => setMobileMenuOpen(false)} className="py-3 px-4 text-gray-700 font-medium hover:bg-gray-50 rounded-lg">
-                Locais
               </Link>
               <Link href="#depoimentos" onClick={() => setMobileMenuOpen(false)} className="py-3 px-4 text-gray-700 font-medium hover:bg-gray-50 rounded-lg">
                 Depoimentos
@@ -286,7 +268,6 @@ export default function Home() {
           muted
           playsInline
           preload="auto"
-          poster="/lancha-privada-real.jpg"
           className="absolute inset-0 w-full h-full object-cover"
         >
           <source src="/WhatsApp%20Video%202025-12-10%20at%2001.18.34.mp4" type="video/mp4" />
@@ -315,31 +296,6 @@ export default function Home() {
         </span>
       </div>
 
-      <section id="galeria" className="py-16 md:py-24 bg-gray-50 overflow-hidden">
-        <div className="max-w-7xl mx-auto px-4 mb-8 md:mb-10 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
-          <div>
-            <span className="text-[#25D366] font-bold text-xs md:text-sm uppercase tracking-widest">Momentos</span>
-            <h2 className="text-3xl md:text-4xl lg:text-5xl font-heading text-[#0a4d54] mt-1 md:mt-2 tracking-wide">GALERIA</h2>
-          </div>
-          <div className="flex gap-2">
-            <button onClick={() => scroll(galleryRef, 'left')} className="p-2.5 md:p-3 rounded-full bg-white shadow-md border hover:bg-gray-100 transition active:scale-95">
-              <svg className="w-4 h-4 md:w-5 md:h-5 text-[#0a4d54]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
-            </button>
-            <button onClick={() => scroll(galleryRef, 'right')} className="p-2.5 md:p-3 rounded-full bg-white shadow-md border hover:bg-gray-100 transition active:scale-95">
-              <svg className="w-4 h-4 md:w-5 md:h-5 text-[#0a4d54]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-            </button>
-          </div>
-        </div>
-
-        <div ref={galleryRef} className="flex gap-3 md:gap-4 overflow-x-auto px-4 pb-4 snap-x scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
-          {galleryImages.map((img, i) => (
-            <div key={i} className="min-w-[260px] sm:min-w-[300px] md:min-w-[400px] h-[200px] sm:h-[240px] md:h-[280px] relative rounded-xl md:rounded-2xl overflow-hidden shadow-lg snap-start flex-shrink-0 group">
-              <Image src={img} alt={`Galeria ${i}`} fill className="object-cover group-hover:scale-110 transition-transform duration-700" />
-            </div>
-          ))}
-        </div>
-      </section>
-
       <section id="passeios" className="py-16 md:py-24 px-4 bg-white">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-10 md:mb-16">
@@ -352,7 +308,13 @@ export default function Home() {
             {tours.map((tour) => (
               <div key={tour.id} className="group bg-white rounded-2xl md:rounded-3xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 border border-gray-100 flex flex-col">
                 <div className="relative h-48 sm:h-52 md:h-56 overflow-hidden">
-                  <Image src={tour.image} alt={tour.title} fill className="object-cover group-hover:scale-110 transition-transform duration-700" />
+                  <Image
+                    src={tour.image}
+                    alt={tour.title}
+                    fill
+                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                    className="object-cover group-hover:scale-110 transition-transform duration-700"
+                  />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent"></div>
                   <h3 className="absolute bottom-3 md:bottom-4 left-3 md:left-4 right-3 text-xl md:text-2xl font-heading text-white tracking-wide">{tour.title}</h3>
                 </div>
@@ -421,169 +383,34 @@ export default function Home() {
         </div>
       </section>
 
-      <section id="locais" className="py-16 md:py-24 px-4 relative overflow-hidden">
-        {/* Beautiful map background */}
-        <div className="absolute inset-0 bg-gradient-to-br from-[#0a4d54] via-[#0d5861] to-[#0a4d54]"></div>
-        <div
-          className="absolute inset-0 opacity-15 bg-cover bg-center mix-blend-overlay"
-          style={{ backgroundImage: 'url(/coastal-map.jpg)' }}
-        ></div>
-
-        {/* Subtle animated overlay */}
-        <div className="absolute inset-0 opacity-10">
-          <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-cyan-400 rounded-full blur-3xl animate-pulse"></div>
-          <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-teal-400 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }}></div>
+      <section id="galeria" className="py-16 md:py-24 bg-gray-50 overflow-hidden">
+        <div className="max-w-7xl mx-auto px-4 mb-8 md:mb-10 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
+          <div>
+            <span className="text-[#25D366] font-bold text-xs md:text-sm uppercase tracking-widest">Momentos</span>
+            <h2 className="text-3xl md:text-4xl lg:text-5xl font-heading text-[#0a4d54] mt-1 md:mt-2 tracking-wide">GALERIA</h2>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => scroll(galleryRef, 'left')} className="p-2.5 md:p-3 rounded-full bg-white shadow-md border hover:bg-gray-100 transition active:scale-95">
+              <svg className="w-4 h-4 md:w-5 md:h-5 text-[#0a4d54]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+            </button>
+            <button onClick={() => scroll(galleryRef, 'right')} className="p-2.5 md:p-3 rounded-full bg-white shadow-md border hover:bg-gray-100 transition active:scale-95">
+              <svg className="w-4 h-4 md:w-5 md:h-5 text-[#0a4d54]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            </button>
+          </div>
         </div>
 
-        <div className="max-w-7xl mx-auto relative z-10">
-          <div className="text-center mb-8 md:mb-12">
-            <span className="text-cyan-300 font-bold text-xs md:text-sm uppercase tracking-widest">Onde Encontrar</span>
-            <h2 className="text-3xl md:text-4xl lg:text-5xl font-heading mt-1 md:mt-2 tracking-wide text-white">PONTOS DE ENCONTRO</h2>
-            <p className="text-cyan-200 mt-3 md:mt-4 max-w-xl mx-auto text-sm md:text-base">Todos os pontos de embarque em um só mapa</p>
-          </div>
-
-          {/* Professional Interactive Map */}
-          <div className="mb-8 md:mb-12">
-            <div className="bg-white/95 backdrop-blur-sm rounded-2xl md:rounded-3xl overflow-hidden shadow-2xl">
-              <div className="relative h-[400px] md:h-[500px] lg:h-[600px] overflow-hidden bg-[#e5e7eb] group">
-                {/* Generated Map Background */}
-                <iframe
-                  src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d239373.4982847193!2d-42.0901963!3d-22.8542904!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x97693db4c4937b%3A0x5f94a926cd6ab34f!2sRegi%C3%A3o%20dos%20Lagos%2C%20RJ!5e0!3m2!1spt-BR!2sbr!4v1765478050000!5m2!1spt-BR!2sbr"
-                  width="100%"
-                  height="100%"
-                  style={{ border: 0 }}
-                  allowFullScreen={true}
-                  loading="lazy"
-                  referrerPolicy="no-referrer-when-downgrade"
-                  className="absolute inset-0 brightness-105"
-                ></iframe>
-              </div>
+        <div ref={galleryRef} className="flex gap-3 md:gap-4 overflow-x-auto px-4 pb-4 snap-x scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
+          {galleryImages.map((img, i) => (
+            <div key={i} className="min-w-[260px] sm:min-w-[300px] md:min-w-[400px] h-[200px] sm:h-[240px] md:h-[280px] relative rounded-xl md:rounded-2xl overflow-hidden shadow-lg snap-start flex-shrink-0 group">
+              <Image
+                src={img}
+                alt={`Galeria ${i}`}
+                fill
+                sizes="(max-width: 768px) 80vw, (max-width: 1280px) 40vw, 400px"
+                className="object-cover group-hover:scale-110 transition-transform duration-700"
+              />
             </div>
-          </div>
-
-          {/* Compact Location Info Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-            {/* Arraial do Cabo */}
-            <div className="bg-white/95 backdrop-blur-sm rounded-xl md:rounded-2xl p-5 md:p-6 shadow-lg hover:shadow-xl transition-all duration-300 border-l-4 border-cyan-500">
-              <div className="flex items-start gap-3 mb-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-cyan-500 to-teal-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /></svg>
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-lg font-heading text-[#0a4d54] mb-1">Arraial do Cabo</h3>
-                  <p className="text-xs text-gray-600">Marina dos Pescadores</p>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex flex-wrap gap-1.5">
-                  <span className="bg-cyan-100 text-cyan-700 px-2 py-1 rounded-md text-xs font-medium">🚤 Barco</span>
-                  <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-md text-xs font-medium">🤿 Mergulho</span>
-                </div>
-
-                <div className="bg-gray-50 rounded-lg p-3 grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <p className="text-gray-500 mb-0.5">Check-in</p>
-                    <p className="font-bold text-[#0a4d54]">10:30</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500 mb-0.5">Saída</p>
-                    <p className="font-bold text-[#0a4d54]">11:00</p>
-                  </div>
-                </div>
-
-                <Link
-                  href={meetingPoints[0].mapLink}
-                  target="_blank"
-                  className="w-full inline-flex items-center justify-center gap-2 bg-[#0a4d54] hover:bg-[#073538] text-white font-semibold py-2.5 rounded-lg text-xs transition-all active:scale-95"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
-                  Ver Rotas
-                </Link>
-              </div>
-            </div>
-
-            {/* Búzios */}
-            <div className="bg-white/95 backdrop-blur-sm rounded-xl md:rounded-2xl p-5 md:p-6 shadow-lg hover:shadow-xl transition-all duration-300 border-l-4 border-purple-500">
-              <div className="flex items-start gap-3 mb-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /></svg>
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-lg font-heading text-[#0a4d54] mb-1">Búzios</h3>
-                  <p className="text-xs text-gray-600">Orla Bardot</p>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex flex-wrap gap-1.5">
-                  <span className="bg-purple-100 text-purple-700 px-2 py-1 rounded-md text-xs font-medium">⛵ Escuna</span>
-                </div>
-
-                <div className="bg-gray-50 rounded-lg p-3 grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <p className="text-gray-500 mb-0.5">Check-in</p>
-                    <p className="font-bold text-[#0a4d54]">10:00</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500 mb-0.5">Saída</p>
-                    <p className="font-bold text-[#0a4d54]">10:30</p>
-                  </div>
-                </div>
-
-                <Link
-                  href={meetingPoints[1].mapLink}
-                  target="_blank"
-                  className="w-full inline-flex items-center justify-center gap-2 bg-[#0a4d54] hover:bg-[#073538] text-white font-semibold py-2.5 rounded-lg text-xs transition-all active:scale-95"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
-                  Ver Rotas
-                </Link>
-              </div>
-            </div>
-
-            {/* Cabo Frio */}
-            <div className="bg-white/95 backdrop-blur-sm rounded-xl md:rounded-2xl p-5 md:p-6 shadow-lg hover:shadow-xl transition-all duration-300 border-l-4 border-blue-500">
-              <div className="flex items-start gap-3 mb-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow-lg">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /></svg>
-                </div>
-                <div className="flex-1">
-                  <h3 className="text-lg font-heading text-[#0a4d54] mb-1">Cabo Frio</h3>
-                  <p className="text-xs text-gray-600">Canal Itajuru</p>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <div className="flex flex-wrap gap-1.5">
-                  <span className="bg-blue-100 text-blue-700 px-2 py-1 rounded-md text-xs font-medium">🚤 Barco</span>
-                  <span className="bg-green-100 text-green-700 px-2 py-1 rounded-md text-xs font-medium">🏍️ Jet Ski</span>
-                  <span className="bg-orange-100 text-orange-700 px-2 py-1 rounded-md text-xs font-medium">🏍️ Quadri</span>
-                  <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded-md text-xs font-medium">🚙 Buggy</span>
-                </div>
-
-                <div className="bg-gray-50 rounded-lg p-3 grid grid-cols-2 gap-2 text-xs">
-                  <div>
-                    <p className="text-gray-500 mb-0.5">Check-in</p>
-                    <p className="font-bold text-[#0a4d54]">Variável</p>
-                  </div>
-                  <div>
-                    <p className="text-gray-500 mb-0.5">Saída</p>
-                    <p className="font-bold text-[#0a4d54]">Variável</p>
-                  </div>
-                </div>
-
-                <Link
-                  href={meetingPoints[2].mapLink}
-                  target="_blank"
-                  className="w-full inline-flex items-center justify-center gap-2 bg-[#0a4d54] hover:bg-[#073538] text-white font-semibold py-2.5 rounded-lg text-xs transition-all active:scale-95"
-                >
-                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
-                  Ver Rotas
-                </Link>
-              </div>
-            </div>
-          </div>
+          ))}
         </div>
       </section>
 
@@ -648,7 +475,7 @@ export default function Home() {
                 height={250}
                 className="rounded-full shadow-2xl w-[180px] h-[180px] md:w-[250px] md:h-[250px] lg:w-[300px] lg:h-[300px]"
                 quality={100}
-                unoptimized
+                loading="lazy"
               />
             </div>
             <div>
@@ -714,7 +541,7 @@ export default function Home() {
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col md:flex-row justify-between items-center gap-6 mb-6 md:mb-8">
             <div className="flex items-center gap-3 md:gap-4">
-              <Image src="/logo-ctc.png" alt="Logo" width={50} height={50} className="rounded-full w-12 h-12 md:w-[60px] md:h-[60px]" quality={100} unoptimized />
+              <Image src="/logo-ctc.png" alt="Logo" width={50} height={50} className="rounded-full w-12 h-12 md:w-[60px] md:h-[60px]" quality={100} loading="lazy" />
               <div>
                 <p className="font-heading text-base md:text-lg tracking-wide">Caleb&apos;s Tour Company</p>
                 <p className="text-xs md:text-sm text-cyan-400">O Caribe Brasileiro é aqui!</p>
