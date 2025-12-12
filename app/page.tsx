@@ -457,16 +457,19 @@ export default function Home() {
           </div>
         </div>
 
-        <div ref={galleryRef} className="flex gap-3 md:gap-4 overflow-x-auto px-4 pb-4 snap-x scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
+        <div ref={galleryRef} className="flex gap-3 md:gap-4 overflow-x-auto px-4 pb-4 snap-x snap-mandatory scrollbar-hide" style={{ scrollbarWidth: 'none' }}>
           {Array.from(new Set(galleryImages)).map((img, i) => (
-            <div key={img} className="min-w-[260px] sm:min-w-[300px] md:min-w-[400px] h-[200px] sm:h-[240px] md:h-[280px] relative rounded-xl md:rounded-2xl overflow-hidden shadow-lg snap-start flex-shrink-0 bg-white p-3">
+            <div
+              key={img}
+              className="min-w-[280px] w-[280px] sm:min-w-[320px] sm:w-[320px] md:min-w-[380px] md:w-[380px] h-[280px] sm:h-[320px] md:h-[380px] relative rounded-2xl md:rounded-3xl overflow-hidden shadow-xl snap-center flex-shrink-0"
+            >
               <Image
                 src={img}
                 alt={`Galeria ${i + 1}`}
                 fill
                 quality={100}
-                sizes="(max-width: 768px) 80vw, (max-width: 1280px) 40vw, 400px"
-                className="object-contain saturate-125 contrast-110 brightness-105 transition-all duration-500"
+                sizes="(max-width: 768px) 320px, 380px"
+                className="object-cover saturate-125 contrast-110 brightness-105 hover:saturate-150 hover:scale-105 transition-all duration-500"
               />
             </div>
           ))}
