@@ -7,108 +7,128 @@ import { useRef, useState, useEffect } from 'react';
 const tours = [
   {
     id: 'barco-arraial',
-    title: 'Passeio de Barco - Arraial',
-    image: '/ilha-farol-arraial.jpg',
-    description: 'O clássico Caribe Brasileiro. Água liberada e roteiro completo por 3h30 a 4h.',
-    tiers: [
-      { name: 'Tradicional', price: 'R$ 150', detail: 'Frutas + Água' },
-      { name: 'Open Bar', price: 'R$ 180', detail: 'Água, Refri, Caipirinha' },
-      { name: 'Open Food', price: 'R$ 280', detail: 'Tudo + Churrasco' },
-    ],
-    features: [
-      'Recepção com frutas e água + bebidas liberadas conforme plano',
-      'Taxa municipal R$ 10 (dinheiro) e bote de apoio para os desembarques',
-      'Wi-Fi, banheiro, salva-vidas e toboágua em dois andares'
-    ],
-    childPolicy: '0-4 anos: Grátis | 5-7 anos: Meia',
+    title: 'PASSEIO DE BARCO COM TOBOÁGUA',
+    subtitle: 'ARRAIAL DO CABO/RJ',
+    image: '/barco-toboagua-novo.jpeg',
+    description: 'São 04 horas de passeio nas águas do Caribe Brasileiro!',
+    duration: '4 horas',
+    difficulty: 'Todos',
+    startingAt: 'R$ 150,00',
+    oldPrice: '',
+    unit: 'pessoa',
+    badge: 'OFERTA IMPERDÍVEL',
     whatsappMessage: 'Olá! Quero agendar o Passeio de Barco em Arraial!'
   },
   {
-    id: 'barco-buzios',
-    title: 'Escuna - Búzios',
-    image: '/escuna-buzios.jpg',
-    description: 'Visite 12 praias e 3 ilhas na charmosa Armação dos Búzios.',
-    price: 'Consulte',
-    features: [
-      '12 praias + 3 ilhas com 3 paradas de mergulho (Ilha Branca, Caboclo, Ilha Feia)',
-      'Taxa portuária R$ 8 em dinheiro e animação guiada a bordo',
-      'Duração média: 2h30'
-    ],
-    childPolicy: '0-5 anos: Grátis | 6-10 anos: Meia',
-    whatsappMessage: 'Olá! Quero saber sobre a Escuna em Búzios!'
-  },
-  {
-    id: 'barco-cabofrio',
-    title: 'Passeio de Barco - Cabo Frio',
-    image: '/barco-cabofrio-real.jpg',
-    description: 'Explore a história e as águas cristalinas de Cabo Frio.',
-    price: 'Consulte',
-    features: [
-      'Boulevard Canal, Ilha do Japonês, Praia do Forte e Forte São Mateus',
-      '2 paradas para mergulho (Ilha dos Papagaios e Canto do Forte)',
-      'Duração: 2h30 a 3h com embarque no canal'
-    ],
-    childPolicy: '0-5 anos: Grátis | 6-10 anos: Meia',
-    whatsappMessage: 'Olá! Quero saber sobre o Barco em Cabo Frio!'
-  },
-  {
-    id: 'quadriciclo',
-    title: 'Quadriciclo',
-    image: '/quadriciclo-dunas.jpg',
-    description: 'Adrenalina nas dunas e lagoas. Fotos e vídeos GoPro inclusos!',
-    price: 'Consulte',
-    features: [
-      'Check-in Praça Lions Club nº17 (Praia Grande) com tolerância de 15 min',
-      'Roteiro: Pedreira, Lagoa Vermelha, Praia Grande, Pontal do Atalaia',
-      'Uso obrigatório de sapato fechado e CNH; aluguel de crocs R$15'
-    ],
-    whatsappMessage: 'Olá! Quero agendar o Quadriciclo!'
-  },
-  {
     id: 'buggy',
-    title: 'Passeio de Buggy',
-    image: '/buggy-dunas-new.jpg',
-    description: 'Passeio 4x4 panorâmico com paradas para banho, fotos e mirantes incríveis.',
-    price: 'Consulte',
-    features: ['Roteiro: Prainha, Pontal, lagoas e Praia Grande', 'Ideal para curtir o pôr do sol (tarde)', 'Duração média: 2h com guia'],
+    title: 'Passeio de Buggy em Arraial do Cabo - ROTEIRO TRADICIONAL',
+    subtitle: 'ARRAIAL DO CABO/RJ',
+    image: '/buggy-aventura.jpeg',
+    description: 'Conheça 04 praias e 01 lagoa durante 02 horas!',
+    duration: '2 horas',
+    difficulty: 'Aventura',
+    startingAt: 'R$ 250,00',
+    oldPrice: '',
+    unit: 'buggy',
+    badge: 'OFERTA IMPERDÍVEL',
     whatsappMessage: 'Olá! Quero reservar o Passeio de Buggy!'
   },
   {
-    id: 'mergulho',
-    title: 'Mergulho de Batismo',
-    image: '/mergulho-arraial.jpg',
-    description: 'Experiência subaquática segura. Não precisa saber nadar!',
-    price: 'Consulte',
-    features: ['Instrutor exclusivo', 'Fotos subaquáticas inclusas', 'Idade mínima: 10 anos (valor integral)'],
-    childPolicy: 'Integral para todas as idades',
-    whatsappMessage: 'Olá! Quero agendar o Mergulho!'
+    id: 'quadriciclo',
+    title: 'PASSEIO DE QUADRICICLO AUTOMÁTICO COM DIREÇÃO ELÉTRICA',
+    subtitle: 'ARRAIAL DO CABO/RJ',
+    image: '/quadriciclo-praia.jpeg',
+    description: 'Roteiro off-road inesquecível!',
+    duration: '1h30',
+    difficulty: 'Aventura',
+    startingAt: 'R$ 380,00',
+    oldPrice: '',
+    unit: 'quadriciclo',
+    badge: 'OFERTA IMPERDÍVEL',
+    whatsappMessage: 'Olá! Quero agendar o Quadriciclo!'
+  },
+  {
+    id: 'mergulho-cilindro',
+    title: 'Mergulho com Cilindro',
+    subtitle: 'ARRAIAL DO CABO/RJ',
+    image: '/mergulho-profundo.jpeg',
+    description: 'Equipamento Instrutor',
+    duration: '2 horas',
+    difficulty: 'Moderado',
+    startingAt: 'R$ 350,00',
+    oldPrice: '',
+    unit: 'pessoa',
+    badge: 'OFERTA IMPERDÍVEL',
+    whatsappMessage: 'Olá! Quero agendar o Mergulho com Cilindro!'
+  },
+  {
+    id: 'mergulho-snorkel',
+    title: 'Mergulho de Snorkel',
+    subtitle: 'ARRAIAL DO CABO/RJ',
+    image: '/mergulho-tartaruga.jpeg',
+    description: 'Equipamento Instrutor',
+    duration: '1h30',
+    difficulty: 'Fácil',
+    startingAt: 'R$ 180,00',
+    oldPrice: '',
+    unit: 'pessoa',
+    badge: 'OFERTA IMPERDÍVEL',
+    whatsappMessage: 'Olá! Quero agendar o Mergulho de Snorkel!'
+  },
+  {
+    id: 'arubinha-buggy',
+    title: 'Arubinha de Buggy',
+    subtitle: 'ARRAIAL DO CABO/RJ',
+    image: '/buggy-igreja.jpeg',
+    description: 'Fotos Gratuitas Parada para Mergulho',
+    duration: '7 horas',
+    difficulty: 'Aventura',
+    startingAt: 'R$ 1.200,00',
+    oldPrice: '',
+    unit: 'buggy',
+    badge: 'OFERTA IMPERDÍVEL',
+    whatsappMessage: 'Olá! Quero reservar a Arubinha de Buggy!'
   },
   {
     id: 'jet-ski',
     title: 'Jet Ski',
-    image: '/WhatsApp-Image-2025-12-10-at-01.34.08.jpeg',
+    subtitle: 'CABO FRIO/RJ',
+    image: '/jet-ski-acao.jpeg',
     description: 'Velocidade e liberdade nas águas turquesas.',
-    price: 'Consulte',
-    features: ['Equipamentos novos e roteiro pelo Canal Itajuru', 'Colete e instrutor incluso', 'Piloto mínimo 18 anos | passageiro a partir de 10 anos'],
+    duration: '30 min',
+    difficulty: 'Moderado',
+    startingAt: 'R$ 200,00',
+    oldPrice: '',
+    unit: 'jet ski',
+    badge: 'OFERTA IMPERDÍVEL',
     whatsappMessage: 'Olá! Quero saber sobre o Jet Ski!'
   },
   {
-    id: 'rio-de-janeiro',
-    title: 'City Tour Rio',
-    image: '/rio-cristo.jpg',
-    description: 'Bate-volta completo pela Cidade Maravilhosa, com roteiro clássico e paradas estratégicas.',
-    price: 'Consulte',
-    features: ['Cristo Redentor, Pão de Açúcar e pontos clássicos', 'Copacabana, Ipanema, Leblon e parada para almoço', 'Transporte executivo + guia credenciado'],
-    childPolicy: '0-6 anos: Grátis (6 paga almoço) | 7+: Integral',
-    whatsappMessage: 'Olá! Quero saber sobre o Tour Rio de Janeiro!'
+    id: 'escuna-buzios',
+    title: 'Escuna - Búzios',
+    subtitle: 'BÚZIOS/RJ',
+    image: '/escuna-navegacao.jpeg',
+    description: 'Visite 12 praias e 3 ilhas na charmosa Armação dos Búzios.',
+    duration: '2h30',
+    difficulty: 'Passeio',
+    startingAt: 'Consulte',
+    oldPrice: '',
+    unit: 'pessoa',
+    badge: '',
+    whatsappMessage: 'Olá! Quero saber sobre a Escuna em Búzios!'
   },
   {
     id: 'lancha',
     title: 'Lancha Privada',
-    image: '/954288_2dc6b461184a4c15a1098187cfbf6eb7~mv2.avif',
-    description: 'Experiência VIP: lancha exclusiva para seu grupo, com conforto, privacidade e roteiro personalizado.',
-    price: 'Sob consulta',
-    features: ['Churrasqueira a bordo (carvão + gelo cortesia)', 'Ducha de água doce, snorkel e tapete flutuante', 'Karaokê/Spotify + balanço instagramável no 2º piso (quando disponível)'],
+    subtitle: 'ARRAIAL DO CABO/RJ',
+    image: '/barco-deck.jpeg',
+    description: 'Experiência VIP: lancha exclusiva para seu grupo.',
+    duration: '4 horas',
+    difficulty: 'VIP',
+    startingAt: 'Sob consulta',
+    oldPrice: '',
+    unit: 'lancha',
+    badge: '',
     whatsappMessage: 'Olá! Quero saber sobre a Lancha Privada!'
   },
 ];
@@ -137,24 +157,26 @@ const testimonials = [
 ];
 
 const galleryImages = [
-  '/EM7_2585-01.jpeg',
-  '/EM7_2942-01.jpeg',
-  '/EM7_7961-01 (1).jpeg',
-  '/EM7_6768-02.jpeg',
-  '/ilha-farol-arraial.jpg',
-  '/vista-buzios.jpg',
-  '/escuna-proa.jpg',
-  '/lancha-privada-real.jpg',
-  '/barco-cabofrio-real.jpg',
-  '/agua-liberada.jpg',
-  '/barco-toboagua.jpg',
-  '/mergulho-arraial.jpg',
-  '/escuna-buzios.jpg',
-  '/cais-praia-anjos.jpg',
-  '/quadriciclo-dunas.jpg',
-  '/buggy-dunas-new.jpg',
-  '/WhatsApp-Image-2025-12-10-at-01.34.08.jpeg',
-  '/WhatsApp-Image-2025-12-10-at-01.43.40.jpeg',
+  '/passeio-barco-1.jpeg',
+  '/quadriciclo-praia.jpeg',
+  '/barco-mar.jpeg',
+  '/bar-praia.jpeg',
+  '/piscina-natural.jpeg',
+  '/vista-aerea.jpeg',
+  '/grupo-barco.jpeg',
+  '/buggy-aventura.jpeg',
+  '/barco-toboagua-novo.jpeg',
+  '/jet-ski-acao.jpeg',
+  '/mergulho-profundo.jpeg',
+  '/praia-paradisiaca.jpg',
+  '/escuna-navegacao.jpeg',
+  '/barco-deck.jpeg',
+  '/drone-vista.jpeg',
+  '/familia-praia.jpeg',
+  '/ponta-arraial.jpeg',
+  '/mergulho-tartaruga.jpeg',
+  '/buggy-igreja.jpeg',
+  '/buggy-lagoa.jpeg',
 ];
 
 const whatsappNumber = '5522998249911';
@@ -269,9 +291,9 @@ export default function Home() {
           playsInline
           preload="auto"
           className="absolute inset-0 w-full h-full object-cover"
+          style={{ objectFit: 'cover' }}
         >
           <source src="/WhatsApp%20Video%202025-12-10%20at%2001.18.34.mp4" type="video/mp4" />
-          <source src="/hero-video.mp4" type="video/mp4" />
         </video>
 
         <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/20 to-black/70"></div>
@@ -298,67 +320,85 @@ export default function Home() {
 
       <section id="passeios" className="py-16 md:py-24 px-4 bg-white">
         <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-10 md:mb-16">
-            <span className="text-[#25D366] font-bold text-xs md:text-sm uppercase tracking-widest">Experiências</span>
-            <h2 className="text-3xl md:text-4xl lg:text-5xl font-heading text-[#0a4d54] mt-1 md:mt-2 tracking-wide">NOSSOS PASSEIOS</h2>
-            <p className="text-gray-500 mt-3 md:mt-4 max-w-xl mx-auto text-sm md:text-base">Escolha como quer viver o paraíso</p>
+          <div className="text-center mb-12 md:mb-20">
+            <h2 className="text-4xl md:text-5xl lg:text-6xl font-black text-[#0a4d54] tracking-tight mb-3">NOSSOS PASSEIOS</h2>
+            <p className="text-gray-600 text-lg md:text-xl font-medium max-w-2xl mx-auto">Escolha como quer viver o paraíso</p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6 lg:gap-8">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
             {tours.map((tour) => (
-              <div key={tour.id} className="group bg-white rounded-2xl md:rounded-3xl overflow-hidden shadow-lg hover:shadow-2xl transition-all duration-300 border border-gray-100 flex flex-col">
-                <div className="relative h-48 sm:h-52 md:h-56 overflow-hidden">
-                  <Image
-                    src={tour.image}
-                    alt={tour.title}
-                    fill
-                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                    className="object-cover group-hover:scale-110 transition-transform duration-700"
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent"></div>
-                  <h3 className="absolute bottom-3 md:bottom-4 left-3 md:left-4 right-3 text-xl md:text-2xl font-heading text-white tracking-wide">{tour.title}</h3>
+              <div key={tour.id} className="relative bg-gradient-to-br from-[#1BA8B8] to-[#0D8A99] rounded-3xl overflow-hidden shadow-xl hover:shadow-2xl transition-all duration-300 flex flex-col">
+                {tour.badge && (
+                  <div className="absolute top-4 right-4 z-10">
+                    <div className="bg-[#FFD700] text-black text-xs font-bold px-3 py-1.5 rounded-full shadow-lg uppercase tracking-wide">
+                      {tour.badge}
+                    </div>
+                  </div>
+                )}
+                
+                <div className="flex justify-center pt-8 pb-4">
+                  <div className="relative w-48 h-48 rounded-full overflow-hidden ring-8 ring-white/30 shadow-2xl">
+                    <Image
+                      src={tour.image}
+                      alt={tour.title}
+                      fill
+                      sizes="200px"
+                      className="object-cover"
+                      quality={100}
+                    />
+                  </div>
                 </div>
 
-                <div className="p-4 md:p-6 flex flex-col flex-1">
-                  <p className="text-gray-600 mb-3 md:mb-4 text-sm">{tour.description}</p>
+                <div className="px-6 pb-6 flex flex-col flex-1 text-white text-center">
+                  <h3 className="text-2xl md:text-3xl font-black mb-2 leading-tight uppercase tracking-tight">{tour.title}</h3>
+                  
+                  <div className="inline-block bg-[#FFD700] text-black text-xs font-bold px-4 py-1 rounded-full mx-auto mb-3 shadow-md">
+                    {tour.subtitle}
+                  </div>
+                  
+                  <p className="text-base mb-4 font-medium">{tour.description}</p>
 
-                  {tour.tiers ? (
-                    <div className="mb-3 md:mb-4 space-y-2 bg-gradient-to-br from-cyan-50 to-teal-50 p-3 md:p-4 rounded-xl text-sm border border-cyan-100">
-                      {tour.tiers.map((t, i) => (
-                        <div key={i} className="flex justify-between items-center">
-                          <span className="font-medium text-[#0a4d54]">{t.name}</span>
-                          <span className="text-[#25D366] font-bold">{t.price}</span>
-                        </div>
-                      ))}
+                  <div className="flex flex-wrap justify-center gap-3 mb-4 text-sm">
+                    {tour.duration && (
+                      <div className="flex items-center gap-1.5 bg-white/20 px-3 py-1.5 rounded-full">
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                        </svg>
+                        <span>{tour.duration}</span>
+                      </div>
+                    )}
+                    {tour.difficulty && (
+                      <div className="flex items-center gap-1.5 bg-white/20 px-3 py-1.5 rounded-full">
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
+                          <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm9.707 5.707a1 1 0 00-1.414-1.414L9 12.586l-1.293-1.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                        <span>{tour.difficulty}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-auto">
+                    <div className="bg-white/20 rounded-2xl p-4 mb-4 backdrop-blur-sm">
+                      <div className="text-sm font-medium mb-1 opacity-90">A partir de</div>
+                      <div className="text-3xl font-black">{tour.startingAt}</div>
+                      {tour.oldPrice && (
+                        <div className="text-sm line-through opacity-70 mt-1">{tour.oldPrice}</div>
+                      )}
+                      <div className="text-xs opacity-90 mt-1">por {tour.unit}</div>
                     </div>
-                  ) : (
-                    <div className="mb-3 md:mb-4 bg-gradient-to-br from-cyan-50 to-teal-50 p-3 md:p-4 rounded-xl text-center border border-cyan-100">
-                      <span className="text-[#0a4d54] font-bold text-base md:text-lg">{tour.price}</span>
-                    </div>
-                  )}
-
-                  <ul className="space-y-1.5 md:space-y-2 text-xs md:text-sm text-gray-600 flex-1 mb-3 md:mb-4">
-                    {tour.features.map((f, i) => (
-                      <li key={i} className="flex items-start gap-2">
-                        <span className="text-[#25D366] font-bold">✓</span> {f}
-                      </li>
-                    ))}
-                  </ul>
-
-                  {tour.childPolicy && (
-                    <div className="mb-3 md:mb-4 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800 flex items-center gap-2">
-                      <span>👶</span>
-                      <span>{tour.childPolicy}</span>
-                    </div>
-                  )}
-
-                  <Link
-                    href={`${whatsappLink}?text=${encodeURIComponent(tour.whatsappMessage)}`}
-                    target="_blank"
-                    className="w-full bg-[#0a4d54] hover:bg-[#073538] text-white font-bold py-2.5 md:py-3 rounded-xl text-center transition-all active:scale-[0.98] text-sm md:text-base"
-                  >
-                    Reservar
-                  </Link>
+                    
+                    <Link
+                      href={`${whatsappLink}?text=${encodeURIComponent(tour.whatsappMessage)}`}
+                      target="_blank"
+                      className="w-full inline-flex items-center justify-center gap-2 bg-white hover:bg-gray-100 text-[#1BA8B8] font-black py-4 rounded-2xl transition-all hover:scale-105 active:scale-95 text-base shadow-xl uppercase tracking-wide"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                      Ver disponibilidade
+                    </Link>
+                  </div>
                 </div>
               </div>
             ))}
