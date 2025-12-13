@@ -20,7 +20,9 @@ export async function POST(req: NextRequest) {
       await updateCobrancaByAsaasId(payment.id, { status: 'CONFIRMADO', pago_em: new Date().toISOString() });
 
       const reserva = await getReservaById(cobranca.reserva_id);
-      if (!reserva) break;
+      if (!reserva) {
+        return NextResponse.json({ received: true, event, message: 'Reserva not found' });
+      }
 
       const voucherCode = generateVoucherCode();
       await updateReservaStatus(cobranca.reserva_id, 'CONFIRMADO', voucherCode);
