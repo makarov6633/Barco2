@@ -131,6 +131,62 @@ const tours = [
     badge: '',
     whatsappMessage: 'Olá! Quero saber sobre a Lancha Privada!'
   },
+  {
+    id: 'city-tour-rio',
+    title: 'City Tour Rio de Janeiro',
+    subtitle: 'RIO DE JANEIRO/RJ',
+    image: '/passeio-city-tour-rio.jpg',
+    description: 'Cristo Redentor, Pão de Açúcar, Maracanã e principais pontos turísticos.',
+    duration: '8 horas',
+    difficulty: 'Passeio',
+    startingAt: 'Consulte',
+    oldPrice: '',
+    unit: 'pessoa',
+    badge: '',
+    whatsappMessage: 'Olá! Quero saber sobre o City Tour Rio de Janeiro!'
+  },
+  {
+    id: 'city-tour-cabo-frio',
+    title: 'City Tour Cabo Frio',
+    subtitle: 'CABO FRIO/RJ',
+    image: '/passeio-city-tour-cabo-frio.jpg',
+    description: 'Ilha do Japonês, Praia do Peró, Praia das Conchas, Praia do Forte e Passagem.',
+    duration: '4 horas',
+    difficulty: 'Passeio',
+    startingAt: 'Consulte',
+    oldPrice: '',
+    unit: 'pessoa',
+    badge: '',
+    whatsappMessage: 'Olá! Quero saber sobre o City Tour Cabo Frio!'
+  },
+  {
+    id: 'city-tour-arraial',
+    title: 'City Tour Arraial do Cabo',
+    subtitle: 'ARRAIAL DO CABO/RJ',
+    image: '/passeio-city-tour-arraial.jpg',
+    description: 'Tour terrestre histórico e cultural pelos principais pontos de Arraial.',
+    duration: '3 horas',
+    difficulty: 'Passeio',
+    startingAt: 'Consulte',
+    oldPrice: '',
+    unit: 'pessoa',
+    badge: '',
+    whatsappMessage: 'Olá! Quero saber sobre o City Tour Arraial do Cabo!'
+  },
+  {
+    id: 'buggy-buzios',
+    title: 'City Tour Buggy Búzios',
+    subtitle: 'BÚZIOS/RJ',
+    image: '/passeio-buggy-buzios.jpeg',
+    description: 'Aventura panorâmica pelas praias e mirantes de Búzios.',
+    duration: '3 horas',
+    difficulty: 'Aventura',
+    startingAt: 'Consulte',
+    oldPrice: '',
+    unit: 'buggy',
+    badge: '',
+    whatsappMessage: 'Olá! Quero saber sobre o City Tour Buggy em Búzios!'
+  },
 ];
 
 const moreServices = [
