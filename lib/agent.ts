@@ -50,69 +50,96 @@ export async function processMessage(telefone: string, message: string): Promise
       });
     }
 
-    // PRIORIDADE 2: Fluxo de reserva ativo
+    // PRIORIDADE 2: Atualizar dados da reserva com análise
     if (context.currentFlow === 'reserva') {
-      const response = await handleReservaFlow(telefone, message, context, analysis);
-      
-      captureMemoriesFromInteraction(context, analysis, message);
-
-      // Adicionar ao histórico
-      context.conversationHistory.push(
-        { role: 'user', content: message },
-        { role: 'assistant', content: response }
-      );
-
-      // Limitar histórico
-      if (context.conversationHistory.length > 20) {
-        context.conversationHistory = context.conversationHistory.slice(-20);
+      // Atualizar tempData com entidades detectadas
+      if (analysis.entities.passeio && !context.tempData?.passeio) {
+        context.tempData = context.tempData || {};
+        context.tempData.passeio = analysis.entities.passeio;
       }
-
-      // Salvar contexto
-      context.lastMessage = message;
-      context.lastIntent = analysis.intent;
-      context.lastMessageTime = new Date().toISOString();
-      await saveConversationContext(context);
-
-      console.log(`✅ Respondido em ${Date.now() - startTime}ms`);
-      return response;
-    }
-
-    // PRIORIDADE 3: Iniciar fluxo de reserva
-    if (analysis.intent === 'reserva' && analysis.confidence > 0.6) {
-      context.currentFlow = 'reserva';
-      context.flowStep = 'inicial';
-      context.tempData = {
-        passeio: analysis.entities.passeio,
-        data: analysis.entities.data,
-        numPessoas: analysis.entities.numPessoas
-      };
-
-      const response = await handleReservaFlow(telefone, message, context, analysis);
+      if (analysis.entities.data && !context.tempData?.data) {
+        context.tempData = context.tempData || {};
+        context.tempData.data = analysis.entities.data;
+      }
+      if (analysis.entities.numPessoas && !context.tempData?.numPessoas) {
+        context.tempData = context.tempData || {};
+        context.tempData.numPessoas = analysis.entities.numPessoas;
+      }
+      if (analysis.entities.nome && !context.nome) {
+        context.nome = analysis.entities.nome;
+      }
       
-      captureMemoriesFromInteraction(context, analysis, message);
+      // Se for uma seleção numérica e temos opções
+      if (context.tempData?.optionList?.length) {
+        const normalizedMessage = normalizeString(message);
+        const selectionIndex = detectOptionSelection(normalizedMessage);
 
-      context.conversationHistory.push(
-        { role: 'user', content: message },
-        { role: 'assistant', content: response }
-      );
-
-      context.lastMessage = message;
-      context.lastIntent = analysis.intent;
-      context.lastMessageTime = new Date().toISOString();
-      await saveConversationContext(context);
-
-      console.log(`✅ Respondido em ${Date.now() - startTime}ms`);
-      return response;
+        if (selectionIndex !== null && context.tempData.optionList[selectionIndex]) {
+          context.tempData.passeio = context.tempData.optionList[selectionIndex];
+          if (context.tempData.optionIds?.[selectionIndex]) {
+            context.tempData.passeioId = context.tempData.optionIds[selectionIndex];
+          }
+          context.tempData.optionList = undefined;
+          context.tempData.optionIds = undefined;
+        }
+      }
     }
 
-    // PRIORIDADE 4: Conversa normal com IA
+    // PRIORIDADE 3: Conversa com contexto especial (preço, reserva, etc)
+    // A IA interpreta e responde naturalmente com os dados do banco
+
+    // PRIORIDADE 4: Conversa com IA (sempre)
     const memoryPrompts = buildMemoryPrompts(context);
+
+    // Buscar passeios do banco de dados para fornecer informações precisas
+    const passeios = await getAllPasseios();
+    const passeiosInfo = passeios.map(p => 
+      `${p.nome} - R$ ${p.preco_min || 'Consulte'} a R$ ${p.preco_max || 'Consulte'} - ${p.duracao || 'Consulte duração'} - ${p.local || ''}`
+    ).join('\n');
+
+    // Preparar contexto especial baseado na intenção
+    let specialContext = '';
+    if (analysis.intent === 'reserva' || context.currentFlow === 'reserva') {
+      if (!context.currentFlow) {
+        context.currentFlow = 'reserva';
+        context.tempData = {
+          passeio: analysis.entities.passeio,
+          data: analysis.entities.data,
+          numPessoas: analysis.entities.numPessoas
+        };
+      }
+      
+      const faltando = [];
+      if (!context.tempData?.passeio && !context.tempData?.passeioId) faltando.push('qual passeio');
+      if (!context.tempData?.data) faltando.push('data');
+      if (!context.tempData?.numPessoas) faltando.push('número de pessoas');
+      if (!context.nome) faltando.push('nome completo');
+      
+      if (faltando.length > 0) {
+        specialContext = `MODO RESERVA ATIVO: Você está coletando informações para uma reserva. Ainda falta: ${faltando.join(', ')}. Pergunte de forma natural e amigável.`;
+      } else {
+        // Criar reserva
+        const reservaResult = await criarReservaFinal(telefone, context);
+        context.conversationHistory.push(
+          { role: 'user', content: message },
+          { role: 'assistant', content: reservaResult }
+        );
+        context.lastMessage = message;
+        context.lastIntent = analysis.intent;
+        context.lastMessageTime = new Date().toISOString();
+        await saveConversationContext(context);
+        console.log(`✅ Respondido em ${Date.now() - startTime}ms`);
+        return reservaResult;
+      }
+    }
 
     const response = await generateAIResponse(
       message, 
       context.conversationHistory,
       context.nome,
-      memoryPrompts
+      memoryPrompts,
+      passeiosInfo,
+      specialContext
     );
 
     captureMemoriesFromInteraction(context, analysis, message);
@@ -142,85 +169,7 @@ export async function processMessage(telefone: string, message: string): Promise
   }
 }
 
-async function handleReservaFlow(
-  telefone: string,
-  message: string,
-  context: ConversationContext,
-  analysis: any
-): Promise<string> {
-  
-  if (!context.tempData) {
-    context.tempData = {};
-  }
 
-  // Verificar se tem todas as informações
-  let hasPasseio = !!(context.tempData.passeio || context.tempData.passeioId);
-  const hasData = !!context.tempData.data;
-  const hasPessoas = !!context.tempData.numPessoas;
-  const hasNome = !!context.nome;
-
-  // Interpretar seleção numérica/textual quando acabamos de sugerir opções
-  if (!hasPasseio && context.tempData.optionList?.length) {
-    const normalizedMessage = normalizeString(message);
-    const selectionIndex = detectOptionSelection(normalizedMessage);
-
-    if (selectionIndex !== null && context.tempData.optionList[selectionIndex]) {
-      context.tempData.passeio = context.tempData.optionList[selectionIndex];
-      if (context.tempData.optionIds?.[selectionIndex]) {
-        context.tempData.passeioId = context.tempData.optionIds[selectionIndex];
-      }
-      context.tempData.optionList = undefined;
-      context.tempData.optionIds = undefined;
-    } else {
-      const matchedIndex = context.tempData.optionList.findIndex(option =>
-        normalizedMessage.includes(normalizeString(option.split('-')[0]))
-      );
-
-      if (matchedIndex >= 0) {
-        context.tempData.passeio = context.tempData.optionList[matchedIndex];
-        if (context.tempData.optionIds?.[matchedIndex]) {
-          context.tempData.passeioId = context.tempData.optionIds[matchedIndex];
-        }
-        context.tempData.optionList = undefined;
-        context.tempData.optionIds = undefined;
-      }
-    }
-
-    hasPasseio = !!(context.tempData.passeio || context.tempData.passeioId);
-  }
-
-  // Coletar informações faltantes
-  if (!hasPasseio) {
-    const passeios = await getAllPasseios();
-    const top3 = passeios.slice(0, 3);
-
-    context.tempData.optionList = top3.map((p) => p.nome);
-    context.tempData.optionIds = top3.map((p) => p.id);
-
-    const opcoes = top3.map((p, i) => {
-      const nome = p.nome.split('-')[0].trim();
-      const faixa = p.preco_min && p.preco_max ? `R$ ${p.preco_min}-${p.preco_max}` : 'Consulte';
-      return `${i + 1}. ${nome} (${faixa})`;
-    }).join('\n');
-
-    return `Legal! Vamos fazer sua reserva 😊\n\nQual passeio te interessa?\n\n${opcoes}\n\nPode responder com o número (1, 2 ou 3) ou digitar o nome.\nSe preferir outro, é só me contar!`;
-  }
-
-  if (!hasData) {
-    return `Show! ${context.nome ? context.nome.split(' ')[0] + ', ' : ''}pra qual dia você quer ir?\n\nPode ser: "amanhã", "sábado", "15/02"...`;
-  }
-
-  if (!hasPessoas) {
-    return `Beleza! Quantas pessoas vão no passeio?`;
-  }
-
-  if (!hasNome) {
-    return `Perfeito! Só preciso do seu nome completo pra gerar o voucher 😊`;
-  }
-
-  // TEM TUDO - Criar reserva
-  return await criarReservaFinal(telefone, context);
-}
 
 async function criarReservaFinal(telefone: string, context: ConversationContext): Promise<string> {
   try {
