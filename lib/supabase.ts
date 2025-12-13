@@ -66,7 +66,7 @@ export interface ConversationContext {
   telefone: string;
   nome?: string;
   conversationHistory: Array<{ role: string; content: string }>;
-  currentFlow?: 'reserva' | 'consulta' | 'cancelamento';
+  currentFlow?: 'reserva' | 'consulta' | 'cancelamento' | 'pagamento';
   flowStep?: string;
   tempData?: {
     passeio?: string;
