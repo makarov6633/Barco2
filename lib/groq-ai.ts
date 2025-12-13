@@ -12,8 +12,8 @@ function getGroq() {
   return cachedGroq;
 }
 
-const REASONING_MODEL = process.env.GROQ_REASONING_MODEL || 'llama-3.3-70b-versatile';
-const INTENT_MODEL = process.env.GROQ_INTENT_MODEL || 'llama-3.3-70b-versatile';
+const REASONING_MODEL = process.env.GROQ_REASONING_MODEL || 'openai/gpt-oss-120b';
+const INTENT_MODEL = process.env.GROQ_INTENT_MODEL || 'openai/gpt-oss-120b';
 
 async function buildDynamicSystemPrompt(userMessage: string): Promise<string> {
   const knowledgeContext = await buildKnowledgeContext(userMessage);
