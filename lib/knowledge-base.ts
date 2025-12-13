@@ -237,11 +237,24 @@ export const TOURS_INFO = {
     ]
   },
   combo_barco_quadri: {
-    nome: "Combo Barco + Quadriciclo",
+    nome: "Combo Barco + Quadriciclo Automático",
     categoria: "Combos",
-    descricao_curta: "Pacote especial unindo Caribe Brasileiro no barco + aventura off-road no quadriciclo.",
-    beneficios: ["Economia de 10-20%", "Flexibilidade para fazer em dias diferentes"],
-    faq: []
+    preco: "R$ 300,00 para 02 pessoas",
+    duracao: "Barco 4h + Quadriciclo 2h30",
+    idade_minima: "A partir de 7 anos",
+    descricao_curta: "Pacote completo para 02 pessoas! Passeio de barco com toboágua + quadriciclo no mesmo dia ou em dias diferentes.",
+    incluso: [
+      "Passeio de Barco com Toboágua (04 horas de passeio)",
+      "Passeio de Quadriciclo Automático (você pilota!)",
+      "Parada para fotos durante o quadriciclo",
+      "Flexibilidade: faça no mesmo dia ou em dias diferentes"
+    ],
+    beneficios: ["Economia comprando junto", "Flexibilidade para fazer em dias diferentes", "Experiência completa: mar e terra"],
+    faq: [
+      { p: "Preciso fazer no mesmo dia?", r: "Não! Você pode realizar os passeios no mesmo dia ou em dias diferentes, conforme sua preferência." },
+      { p: "Quantas pessoas cabem?", r: "O combo é para 02 pessoas (1 quadriciclo com piloto e garupa)." },
+      { p: "Qual a idade mínima?", r: "A partir de 7 anos." }
+    ]
   }
 };
 

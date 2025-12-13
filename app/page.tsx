@@ -123,6 +123,21 @@ const tours = [
     features: ['Churrasqueira a bordo (carvão + gelo cortesia)', 'Ducha de água doce, snorkel e tapete flutuante', 'Karaokê/Spotify + balanço instagramável no 2º piso (quando disponível)'],
     whatsappMessage: 'Olá! Quero saber sobre a Lancha Privada!'
   },
+  {
+    id: 'combo-barco-quadri',
+    title: 'Combo Barco + Quadriciclo',
+    image: '/6c.jpg',
+    description: 'Pacote completo para 02 pessoas! Passeio de barco com toboágua + quadriciclo no mesmo dia ou em dias diferentes.',
+    price: 'R$ 300',
+    features: [
+      'Passeio de Barco com Toboágua (04 horas de passeio)',
+      'Passeio de Quadriciclo Automático (você pilota!)',
+      'Parada para fotos durante o quadriciclo',
+      'Flexibilidade: faça no mesmo dia ou em dias diferentes'
+    ],
+    childPolicy: 'A partir de 7 anos',
+    whatsappMessage: 'Olá! Quero reservar o Combo Barco + Quadriciclo!'
+  },
 ];
 
 const moreServices = [

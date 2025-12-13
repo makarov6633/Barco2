@@ -240,6 +240,33 @@ chunks = [
             
             VALOR: R$ 550 por buggy (comporta até 4 pessoas)
             Pagamento em cartão de crédito possui acréscimo de 5%.''')
+    },
+    {
+        'slug': 'combos/barco-quadriciclo',
+        'title': 'COMBO Barco + Quadriciclo Automático para 02 Pessoas',
+        'source': 'Arraial Sun 13/12/2025',
+        'tags': ['combo','barco','quadriciclo','pacote'],
+        'content': dedent('''\
+            COMBO BARCO + QUADRICICLO AUTOMÁTICO - R$ 300,00 PARA 02 PESSOAS
+            
+            Pacote completo que une o melhor do mar e da terra!
+            
+            O QUE ESTÁ INCLUSO:
+            • Passeio de Barco com Toboágua (04 horas de passeio)
+            • Passeio de Quadriciclo Automático (você pilota!)
+            • Parada para fotos durante o quadriciclo
+            • Flexibilidade total: faça no mesmo dia ou em dias diferentes!
+            
+            IDADE MÍNIMA: A partir de 7 anos
+            
+            VALOR: R$ 300,00 para 02 pessoas (combo completo)
+            
+            VANTAGENS DO COMBO:
+            • Economia comprando os dois passeios juntos
+            • Total flexibilidade de datas
+            • Experiência completa: conheça Arraial por mar e terra
+            
+            Você poderá realizar os passeios no mesmo dia ou em dias diferentes, conforme sua preferência e disponibilidade!''')
     }
 ]
 
