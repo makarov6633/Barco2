@@ -9,7 +9,14 @@ import {
   MemoryEntry 
 } from './supabase';
 import { generateAIResponse, detectIntentWithAI } from './groq-ai';
-import { notifyBusiness, formatVoucher } from './twilio';
+import { notifyBusiness, formatVoucher, sendWhatsAppMessage } from './twilio';
+import {
+  findOrCreateCustomer,
+  createPixPayment,
+  createBoletoPayment,
+  formatPixMessage,
+  formatBoletoMessage
+} from './asaas';
 
 export async function processMessage(telefone: string, message: string): Promise<string> {
   const startTime = Date.now();
@@ -20,11 +27,9 @@ export async function processMessage(telefone: string, message: string): Promise
     const context = await getConversationContext(telefone);
     ensureMemoryContainer(context);
     
-    // Análise com IA
     const analysis = await detectIntentWithAI(message);
     console.log(`🎯 Intent: ${analysis.intent} (${Math.round(analysis.confidence * 100)}%)`);
 
-    // Atualizar contexto com entidades detectadas
     if (analysis.entities.nome && !context.nome) {
       context.nome = analysis.entities.nome;
     }
@@ -37,8 +42,10 @@ export async function processMessage(telefone: string, message: string): Promise
     if (analysis.entities.passeio && context.tempData) {
       context.tempData.passeio = analysis.entities.passeio;
     }
+    if (analysis.entities.cpf && context.tempData) {
+      context.tempData.cpf = analysis.entities.cpf;
+    }
 
-    // PRIORIDADE 1: Reclamações (alertar equipe)
     if (analysis.intent === 'reclamacao') {
       await notifyBusiness({
         type: 'RECLAMACAO',
@@ -50,34 +57,29 @@ export async function processMessage(telefone: string, message: string): Promise
       });
     }
 
-    // PRIORIDADE 2: Fluxo de reserva ativo
-    if (context.currentFlow === 'reserva') {
-      const response = await handleReservaFlow(telefone, message, context, analysis);
-      
-      captureMemoriesFromInteraction(context, analysis, message);
-
-      // Adicionar ao histórico
-      context.conversationHistory.push(
-        { role: 'user', content: message },
-        { role: 'assistant', content: response }
-      );
-
-      // Limitar histórico
-      if (context.conversationHistory.length > 20) {
-        context.conversationHistory = context.conversationHistory.slice(-20);
-      }
-
-      // Salvar contexto
-      context.lastMessage = message;
-      context.lastIntent = analysis.intent;
-      context.lastMessageTime = new Date().toISOString();
-      await saveConversationContext(context);
-
-      console.log(`✅ Respondido em ${Date.now() - startTime}ms`);
+    if (context.currentFlow === 'pagamento') {
+      const response = await handlePagamentoFlow(telefone, message, context, analysis);
+      await saveAndLogContext(context, message, analysis, response, startTime);
       return response;
     }
 
-    // PRIORIDADE 3: Iniciar fluxo de reserva
+    if (context.currentFlow === 'reserva') {
+      const response = await handleReservaFlow(telefone, message, context, analysis);
+      await saveAndLogContext(context, message, analysis, response, startTime);
+      return response;
+    }
+
+    if (analysis.intent === 'pagamento' && analysis.confidence > 0.6) {
+      context.currentFlow = 'pagamento';
+      context.flowStep = 'inicial';
+      if (!context.tempData) context.tempData = {};
+      context.tempData.cpf = analysis.entities.cpf;
+      
+      const response = await handlePagamentoFlow(telefone, message, context, analysis);
+      await saveAndLogContext(context, message, analysis, response, startTime);
+      return response;
+    }
+
     if (analysis.intent === 'reserva' && analysis.confidence > 0.6) {
       context.currentFlow = 'reserva';
       context.flowStep = 'inicial';
@@ -88,26 +90,11 @@ export async function processMessage(telefone: string, message: string): Promise
       };
 
       const response = await handleReservaFlow(telefone, message, context, analysis);
-      
-      captureMemoriesFromInteraction(context, analysis, message);
-
-      context.conversationHistory.push(
-        { role: 'user', content: message },
-        { role: 'assistant', content: response }
-      );
-
-      context.lastMessage = message;
-      context.lastIntent = analysis.intent;
-      context.lastMessageTime = new Date().toISOString();
-      await saveConversationContext(context);
-
-      console.log(`✅ Respondido em ${Date.now() - startTime}ms`);
+      await saveAndLogContext(context, message, analysis, response, startTime);
       return response;
     }
 
-    // PRIORIDADE 4: Conversa normal com IA
     const memoryPrompts = buildMemoryPrompts(context);
-
     const response = await generateAIResponse(
       message, 
       context.conversationHistory,
@@ -116,29 +103,206 @@ export async function processMessage(telefone: string, message: string): Promise
     );
 
     captureMemoriesFromInteraction(context, analysis, message);
-
-    // Atualizar histórico
-    context.conversationHistory.push(
-      { role: 'user', content: message },
-      { role: 'assistant', content: response }
-    );
-
-    if (context.conversationHistory.length > 20) {
-      context.conversationHistory = context.conversationHistory.slice(-20);
-    }
-
-    // Salvar contexto
-    context.lastMessage = message;
-    context.lastIntent = analysis.intent;
-    context.lastMessageTime = new Date().toISOString();
-    await saveConversationContext(context);
-
-    console.log(`✅ Respondido em ${Date.now() - startTime}ms`);
+    await saveAndLogContext(context, message, analysis, response, startTime);
     return response;
 
   } catch (error) {
     console.error('❌ Erro ao processar mensagem:', error);
     return 'Ops, deu um probleminha aqui! 😅\nMe manda de novo ou liga: (22) 99824-9911';
+  }
+}
+
+async function saveAndLogContext(
+  context: ConversationContext,
+  message: string,
+  analysis: any,
+  response: string,
+  startTime: number
+): Promise<void> {
+  context.conversationHistory.push(
+    { role: 'user', content: message },
+    { role: 'assistant', content: response }
+  );
+
+  if (context.conversationHistory.length > 20) {
+    context.conversationHistory = context.conversationHistory.slice(-20);
+  }
+
+  context.lastMessage = message;
+  context.lastIntent = analysis.intent;
+  context.lastMessageTime = new Date().toISOString();
+  await saveConversationContext(context);
+
+  console.log(`✅ Respondido em ${Date.now() - startTime}ms`);
+}
+
+async function handlePagamentoFlow(
+  telefone: string,
+  message: string,
+  context: ConversationContext,
+  analysis: any
+): Promise<string> {
+  if (!context.tempData) {
+    context.tempData = {};
+  }
+
+  const hasPasseio = !!(context.tempData.passeio || context.tempData.passeioId);
+  const hasData = !!context.tempData.data;
+  const hasPessoas = !!context.tempData.numPessoas;
+  const hasNome = !!context.nome;
+  const hasCpf = !!context.tempData.cpf;
+
+  if (!hasPasseio || !hasData || !hasPessoas || !hasNome) {
+    context.currentFlow = 'reserva';
+    context.flowStep = 'inicial';
+    return await handleReservaFlow(telefone, message, context, analysis);
+  }
+
+  if (!hasCpf) {
+    const cpfFromMessage = extractCPFFromMessage(message);
+    if (cpfFromMessage) {
+      context.tempData.cpf = cpfFromMessage;
+    } else {
+      return `${context.nome?.split(' ')[0]}, pra gerar o pagamento preciso do seu CPF 📋\n\nPode mandar? (só os números tá bom)`;
+    }
+  }
+
+  const formaPagamento = analysis.entities.formaPagamento || detectPaymentFromMessage(message);
+
+  if (!formaPagamento && context.flowStep !== 'aguardando_pagamento') {
+    context.flowStep = 'escolha_pagamento';
+    return `Beleza ${context.nome?.split(' ')[0]}! 😊\n\nComo você prefere pagar?\n\n1️⃣ *PIX* (instantâneo)\n2️⃣ *Boleto* (até 3 dias)\n\nResponde com 1 ou 2, ou escreve "pix" ou "boleto"`;
+  }
+
+  if (context.flowStep === 'aguardando_pagamento') {
+    return `Seu pagamento já foi gerado! 😊\n\nAssim que identificarmos o pagamento, você receberá o voucher automaticamente.\n\nPrecisa de ajuda? Liga: (22) 99824-9911`;
+  }
+
+  const selectedPayment = formaPagamento || (message.includes('1') ? 'pix' : message.includes('2') ? 'boleto' : null);
+
+  if (!selectedPayment) {
+    return `Não entendi 🤔\n\nDigita *1* para PIX ou *2* para Boleto`;
+  }
+
+  try {
+    const passeios = await getAllPasseios();
+    let passeioSelecionado = context.tempData.passeioId
+      ? passeios.find(p => p.id === context.tempData!.passeioId)
+      : passeios.find(p => {
+          const target = normalizeString(context.tempData!.passeio || '');
+          const nome = normalizeString(p.nome);
+          return nome.includes(target) || target.includes(normalizeString(p.nome.split('-')[0]));
+        });
+
+    if (!passeioSelecionado) {
+      passeioSelecionado = passeios[0];
+    }
+
+    const valorPorPessoa = passeioSelecionado.preco_min && passeioSelecionado.preco_max
+      ? (passeioSelecionado.preco_min + passeioSelecionado.preco_max) / 2
+      : passeioSelecionado.preco_min || passeioSelecionado.preco_max || 200;
+    const valorTotal = valorPorPessoa * (context.tempData.numPessoas || 1);
+
+    const asaasCustomer = await findOrCreateCustomer({
+      name: context.nome!,
+      cpfCnpj: context.tempData.cpf!,
+      phone: telefone
+    });
+
+    const voucherCode = generateVoucherCode();
+    const externalRef = `${voucherCode}-${telefone}`;
+
+    if (selectedPayment === 'pix') {
+      const pixPayment = await createPixPayment({
+        customerId: asaasCustomer.id,
+        value: valorTotal,
+        description: `${passeioSelecionado.nome} - ${context.tempData.numPessoas} pessoa(s) - ${context.tempData.data}`,
+        externalReference: externalRef
+      });
+
+      context.tempData.paymentId = pixPayment.paymentId;
+      context.tempData.voucherCode = voucherCode;
+      context.flowStep = 'aguardando_pagamento';
+
+      await saveReservaPendente(telefone, context, passeioSelecionado, valorTotal, voucherCode, pixPayment.paymentId);
+
+      return formatPixMessage({
+        pixCopiaECola: pixPayment.pixCopiaECola,
+        value: valorTotal,
+        passeioNome: passeioSelecionado.nome,
+        clienteNome: context.nome!
+      });
+
+    } else {
+      const boletoPayment = await createBoletoPayment({
+        customerId: asaasCustomer.id,
+        value: valorTotal,
+        description: `${passeioSelecionado.nome} - ${context.tempData.numPessoas} pessoa(s) - ${context.tempData.data}`,
+        externalReference: externalRef
+      });
+
+      context.tempData.paymentId = boletoPayment.paymentId;
+      context.tempData.voucherCode = voucherCode;
+      context.flowStep = 'aguardando_pagamento';
+
+      await saveReservaPendente(telefone, context, passeioSelecionado, valorTotal, voucherCode, boletoPayment.paymentId);
+
+      return formatBoletoMessage({
+        boletoUrl: boletoPayment.boletoUrl,
+        barCode: boletoPayment.barCode,
+        value: valorTotal,
+        dueDate: boletoPayment.dueDate,
+        passeioNome: passeioSelecionado.nome,
+        clienteNome: context.nome!
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ Erro ao gerar pagamento:', error);
+    context.currentFlow = undefined;
+    context.flowStep = undefined;
+    return `Ops, deu um erro ao gerar o pagamento 😔\n\nPode tentar de novo ou ligar: (22) 99824-9911`;
+  }
+}
+
+async function saveReservaPendente(
+  telefone: string,
+  context: ConversationContext,
+  passeio: any,
+  valorTotal: number,
+  voucherCode: string,
+  paymentId: string
+): Promise<void> {
+  try {
+    const cliente = await getOrCreateCliente(telefone, context.nome);
+    if (!cliente) return;
+
+    await createReserva({
+      cliente_id: cliente.id,
+      passeio_id: passeio.id,
+      data_passeio: context.tempData!.data!,
+      num_pessoas: context.tempData!.numPessoas!,
+      voucher: voucherCode,
+      status: 'PENDENTE',
+      valor_total: valorTotal,
+      observacoes: `Aguardando pagamento - ID: ${paymentId}`
+    });
+
+    await notifyBusiness({
+      type: 'NOVA_RESERVA',
+      data: {
+        nome: context.nome,
+        telefone,
+        passeio: passeio.nome,
+        data: context.tempData!.data,
+        numPessoas: context.tempData!.numPessoas,
+        voucher: voucherCode,
+        valor: valorTotal,
+        status: 'AGUARDANDO PAGAMENTO'
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao salvar reserva pendente:', error);
   }
 }
 
@@ -153,13 +317,11 @@ async function handleReservaFlow(
     context.tempData = {};
   }
 
-  // Verificar se tem todas as informações
   let hasPasseio = !!(context.tempData.passeio || context.tempData.passeioId);
   const hasData = !!context.tempData.data;
   const hasPessoas = !!context.tempData.numPessoas;
   const hasNome = !!context.nome;
 
-  // Interpretar seleção numérica/textual quando acabamos de sugerir opções
   if (!hasPasseio && context.tempData.optionList?.length) {
     const normalizedMessage = normalizeString(message);
     const selectionIndex = detectOptionSelection(normalizedMessage);
@@ -189,7 +351,6 @@ async function handleReservaFlow(
     hasPasseio = !!(context.tempData.passeio || context.tempData.passeioId);
   }
 
-  // Coletar informações faltantes
   if (!hasPasseio) {
     const passeios = await getAllPasseios();
     const top3 = passeios.slice(0, 3);
@@ -215,110 +376,111 @@ async function handleReservaFlow(
   }
 
   if (!hasNome) {
-    return `Perfeito! Só preciso do seu nome completo pra gerar o voucher 😊`;
+    return `Perfeito! Só preciso do seu nome completo pra reserva 😊`;
   }
 
-  // TEM TUDO - Criar reserva
-  return await criarReservaFinal(telefone, context);
+  context.currentFlow = 'pagamento';
+  context.flowStep = 'inicial';
+
+  const passeios = await getAllPasseios();
+  let passeioSelecionado = context.tempData.passeioId
+    ? passeios.find(p => p.id === context.tempData!.passeioId)
+    : passeios.find(p => {
+        const target = normalizeString(context.tempData!.passeio || '');
+        const nome = normalizeString(p.nome);
+        return nome.includes(target) || target.includes(normalizeString(p.nome.split('-')[0]));
+      });
+
+  if (!passeioSelecionado) {
+    passeioSelecionado = passeios[0];
+  }
+
+  const valorPorPessoa = passeioSelecionado?.preco_min && passeioSelecionado?.preco_max
+    ? (passeioSelecionado.preco_min + passeioSelecionado.preco_max) / 2
+    : passeioSelecionado?.preco_min || passeioSelecionado?.preco_max || 200;
+  const valorTotal = valorPorPessoa * (context.tempData.numPessoas || 1);
+
+  return `Perfeito ${context.nome?.split(' ')[0]}! 🎉\n\n📋 *Resumo da Reserva:*\n🚤 ${passeioSelecionado?.nome}\n📅 ${context.tempData.data}\n👥 ${context.tempData.numPessoas} pessoa(s)\n💰 *R$ ${valorTotal.toFixed(2)}*\n\nPra confirmar, preciso do seu CPF e forma de pagamento:\n\n1️⃣ *PIX* (confirma na hora)\n2️⃣ *Boleto* (até 3 dias)\n\nManda seu CPF e escolhe: "pix" ou "boleto" 😊`;
 }
 
-async function criarReservaFinal(telefone: string, context: ConversationContext): Promise<string> {
-  try {
-    const passeios = await getAllPasseios();
+export async function processPaymentConfirmation(
+  paymentId: string,
+  externalReference: string,
+  status: string
+): Promise<void> {
+  if (!['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'].includes(status)) {
+    return;
+  }
 
+  try {
+    const [voucherCode, telefone] = externalReference.split('-');
+    if (!telefone) return;
+
+    const context = await getConversationContext(telefone);
+
+    const passeios = await getAllPasseios();
     let passeioSelecionado = context.tempData?.passeioId
       ? passeios.find(p => p.id === context.tempData!.passeioId)
-      : undefined;
-
-    if (!passeioSelecionado && context.tempData?.passeio) {
-      const target = normalizeString(context.tempData.passeio);
-      passeioSelecionado = passeios.find(p => {
-        const nomeNormalizado = normalizeString(p.nome);
-        const categoriaNormalizada = normalizeString(p.categoria || '');
-        return nomeNormalizado.includes(target) || categoriaNormalizada.includes(target);
-      });
-    }
+      : passeios.find(p => {
+          const target = normalizeString(context.tempData?.passeio || '');
+          return normalizeString(p.nome).includes(target);
+        });
 
     if (!passeioSelecionado) {
-      context.currentFlow = undefined;
-      context.tempData = {};
-      return 'Hmm, não encontrei esse passeio 🤔\nQuer ver a lista completa? Me diz "ver passeios"';
+      passeioSelecionado = passeios[0];
     }
 
-    const cliente = await getOrCreateCliente(telefone, context.nome);
-    if (!cliente) {
-      return 'Ops, erro ao criar seu cadastro 😔\nTenta de novo ou liga: (22) 99824-9911';
-    }
+    const valorPorPessoa = passeioSelecionado?.preco_min || 200;
+    const valorTotal = valorPorPessoa * (context.tempData?.numPessoas || 1);
 
-    const voucherCode = generateVoucherCode();
-    const valorPorPessoa = passeioSelecionado.preco_min && passeioSelecionado.preco_max
-      ? (passeioSelecionado.preco_min + passeioSelecionado.preco_max) / 2
-      : passeioSelecionado.preco_min || passeioSelecionado.preco_max || 200;
-    const numPessoas = context.tempData!.numPessoas!;
-    const dataPasseio = context.tempData!.data!;
-    const valorTotal = valorPorPessoa * numPessoas;
-
-    const reserva = await createReserva({
-      cliente_id: cliente.id,
-      passeio_id: passeioSelecionado.id,
-      data_passeio: dataPasseio,
-      num_pessoas: numPessoas,
-      voucher: voucherCode,
-      status: 'PENDENTE',
-      valor_total: valorTotal,
-      observacoes: 'Reserva via WhatsApp'
-    });
-
-    if (!reserva) {
-      return 'Erro ao criar reserva 😔\nLiga pra gente: (22) 99824-9911';
-    }
-
-    // Notificar empresa
-    await notifyBusiness({
-      type: 'NOVA_RESERVA',
-      data: {
-        nome: context.nome,
-        telefone,
-        passeio: passeioSelecionado.nome,
-        data: dataPasseio,
-        numPessoas,
-        voucher: voucherCode,
-        valor: valorTotal,
-        status: 'PENDENTE'
-      }
-    });
-
-    rememberMemory(context, {
-      type: 'booking',
-      value: `Reserva ${passeioSelecionado.nome} em ${dataPasseio} para ${numPessoas} pessoa(s). Voucher ${voucherCode}.`,
-      tags: ['reserva', passeioSelecionado.id]
-    });
-
-    // Resetar fluxo
-    context.currentFlow = undefined;
-    context.flowStep = undefined;
-    context.tempData = {};
-
-    // Gerar voucher formatado
     const voucherMessage = formatVoucher({
-      voucherCode,
-      clienteNome: context.nome!,
-      passeioNome: passeioSelecionado.nome,
-      data: dataPasseio || 'A confirmar',
+      voucherCode: voucherCode || context.tempData?.voucherCode || generateVoucherCode(),
+      clienteNome: context.nome || 'Cliente',
+      passeioNome: passeioSelecionado?.nome || 'Passeio',
+      data: context.tempData?.data || 'A confirmar',
       horario: '09:00',
-      numPessoas: numPessoas || 1,
+      numPessoas: context.tempData?.numPessoas || 1,
       valorTotal,
       pontoEncontro: 'Cais da Praia dos Anjos - Arraial do Cabo'
     });
 
-    return voucherMessage;
+    await sendWhatsAppMessage(`whatsapp:${telefone}`, `✅ *PAGAMENTO CONFIRMADO!*\n\n${voucherMessage}`);
+
+    context.currentFlow = undefined;
+    context.flowStep = undefined;
+    context.tempData = {};
+    await saveConversationContext(context);
+
+    rememberMemory(context, {
+      type: 'booking',
+      value: `Reserva confirmada: ${passeioSelecionado?.nome} em ${context.tempData?.data}. Voucher: ${voucherCode}`,
+      tags: ['reserva_confirmada']
+    });
 
   } catch (error) {
-    console.error('❌ Erro ao criar reserva final:', error);
-    context.currentFlow = undefined;
-    context.tempData = {};
-    return 'Ops, deu erro ao finalizar 😔\nLiga pra gente: (22) 99824-9911';
+    console.error('Erro ao processar confirmação de pagamento:', error);
   }
+}
+
+function extractCPFFromMessage(message: string): string | undefined {
+  const cpfMatch = message.match(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/);
+  if (cpfMatch) {
+    return cpfMatch[0].replace(/\D/g, '');
+  }
+
+  const numbersOnly = message.replace(/\D/g, '');
+  if (numbersOnly.length === 11) {
+    return numbersOnly;
+  }
+
+  return undefined;
+}
+
+function detectPaymentFromMessage(message: string): 'pix' | 'boleto' | null {
+  const lower = message.toLowerCase();
+  if (lower.includes('pix')) return 'pix';
+  if (lower.includes('boleto')) return 'boleto';
+  return null;
 }
 
 function normalizeString(value?: string): string {
@@ -333,30 +495,12 @@ function normalizeString(value?: string): string {
 }
 
 const OPTION_KEYWORDS: Record<string, number> = {
-  'primeiro': 0,
-  'primeira': 0,
-  'opcao 1': 0,
-  'opção 1': 0,
-  'numero 1': 0,
-  'número 1': 0,
-  'um': 0,
-  'uma': 0,
-  'segundo': 1,
-  'segunda': 1,
-  'opcao 2': 1,
-  'opção 2': 1,
-  'numero 2': 1,
-  'número 2': 1,
-  'dois': 1,
-  'duas': 1,
-  'terceiro': 2,
-  'terceira': 2,
-  'opcao 3': 2,
-  'opção 3': 2,
-  'numero 3': 2,
-  'número 3': 2,
-  'tres': 2,
-  'três': 2
+  'primeiro': 0, 'primeira': 0, 'opcao 1': 0, 'opção 1': 0,
+  'numero 1': 0, 'número 1': 0, 'um': 0, 'uma': 0,
+  'segundo': 1, 'segunda': 1, 'opcao 2': 1, 'opção 2': 1,
+  'numero 2': 1, 'número 2': 1, 'dois': 1, 'duas': 1,
+  'terceiro': 2, 'terceira': 2, 'opcao 3': 2, 'opção 3': 2,
+  'numero 3': 2, 'número 3': 2, 'tres': 2, 'três': 2
 };
 
 function detectOptionSelection(message: string): number | null {

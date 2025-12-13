@@ -77,6 +77,8 @@ export interface ConversationContext {
     email?: string;
     optionList?: string[];
     optionIds?: string[];
+    paymentId?: string;
+    voucherCode?: string;
   };
   lastIntent?: string;
   lastMessage?: string;

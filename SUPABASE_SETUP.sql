@@ -64,7 +64,36 @@ INSERT INTO passeios (id, nome, categoria, preco_min, preco_max, duracao, local)
   ('9f00a217-011f-4b70-a08d-bb32c0a6e593', 'Van Tour Região dos Lagos', 'City Tour', 80.00, 150.00, '6-8h', 'Região dos Lagos, RJ')
 ON CONFLICT (id) DO NOTHING;
 
+-- Tabela de Knowledge Chunks (Base de conhecimento do agente)
+CREATE TABLE IF NOT EXISTS knowledge_chunks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug TEXT UNIQUE NOT NULL,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  category TEXT,
+  tags TEXT[],
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Tabela de Pagamentos (tracking local)
+CREATE TABLE IF NOT EXISTS pagamentos (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  reserva_id UUID REFERENCES reservas(id) ON DELETE CASCADE,
+  asaas_payment_id TEXT UNIQUE,
+  tipo TEXT NOT NULL, -- PIX, BOLETO
+  status TEXT DEFAULT 'PENDING',
+  valor NUMERIC(10,2) NOT NULL,
+  pix_copia_cola TEXT,
+  boleto_url TEXT,
+  confirmed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Índices para performance
 CREATE INDEX IF NOT EXISTS idx_reservas_cliente ON reservas(cliente_id);
 CREATE INDEX IF NOT EXISTS idx_reservas_voucher ON reservas(voucher);
 CREATE INDEX IF NOT EXISTS idx_contexts_telefone ON conversation_contexts(telefone);
+CREATE INDEX IF NOT EXISTS idx_knowledge_slug ON knowledge_chunks(slug);
+CREATE INDEX IF NOT EXISTS idx_knowledge_category ON knowledge_chunks(category);
+CREATE INDEX IF NOT EXISTS idx_pagamentos_asaas ON pagamentos(asaas_payment_id);

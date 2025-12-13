@@ -53,33 +53,33 @@ export async function GET() {
   const hasGroq = !!process.env.GROQ_API_KEY;
   const hasSupabase = !!process.env.NEXT_PUBLIC_SUPABASE_URL;
   const hasTwilio = !!process.env.TWILIO_ACCOUNT_SID;
+  const hasAsaas = !!process.env.ASAAS_API_KEY;
+  const groqModel = process.env.GROQ_REASONING_MODEL || 'llama-3.3-70b-versatile';
 
   return NextResponse.json({
     status: '🟢 ONLINE',
     agent: 'Ana - Caleb\'s Tour',
-    version: '4.0-FINAL',
+    version: '5.0-PAGAMENTOS',
     timestamp: new Date().toISOString(),
     services: {
-      groq: hasGroq ? '✅ Conectado (openai/gpt-oss-120b)' : '❌ Desconectado',
+      groq: hasGroq ? `✅ Conectado (${groqModel})` : '❌ Desconectado',
       supabase: hasSupabase ? '✅ Conectado' : '❌ Desconectado',
-      twilio: hasTwilio ? '✅ Conectado' : '❌ Desconectado'
+      twilio: hasTwilio ? '✅ Conectado' : '❌ Desconectado',
+      asaas: hasAsaas ? '✅ Conectado (PIX/Boleto)' : '❌ Desconectado'
     },
     features: [
-      '🧠 IA Conversacional Natural com Groq',
-      '💬 Contexto Ilimitado',
+      '🧠 IA com Knowledge Base do Supabase',
+      '💳 Pagamentos PIX e Boleto via Asaas',
+      '🎫 Voucher Automático após Pagamento',
+      '💬 Contexto de Conversa Persistente',
       '🎯 Detecção de Intenção Avançada',
-      '🎫 Geração de Vouchers Automática',
       '📱 Notificações em Tempo Real',
       '🔄 Fluxo de Reserva Inteligente',
-      '😊 Personalidade Brasileira Autêntica',
-      '⚡ Respostas em <1 segundo'
+      '😊 Personalidade Brasileira Autêntica'
     ],
-    bestPractices: [
-      'Tom natural e humano',
-      'Respostas curtas para WhatsApp',
-      'Reconhecimento de emoções',
-      'Contexto conversacional',
-      'Adaptação ao ritmo do usuário'
-    ]
+    webhooks: {
+      whatsapp: '/api/webhook/whatsapp',
+      asaas: '/api/webhook/asaas'
+    }
   });
 }

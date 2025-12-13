@@ -1,5 +1,5 @@
 import Groq from 'groq-sdk';
-import { FAQ_GENERAL, TOURS_INFO, CALEB_INFO, FAQ_PERFIL, FAQ_TEMPORADA } from './knowledge-base';
+import { buildKnowledgeContext, getPriceInfo, getAllKnowledgeChunks } from './knowledge-supabase';
 
 let cachedGroq: Groq | null = null;
 
@@ -12,89 +12,52 @@ function getGroq() {
   return cachedGroq;
 }
 
-const REASONING_MODEL = process.env.GROQ_REASONING_MODEL || 'openai/gpt-oss-120b';
-const INTENT_MODEL = process.env.GROQ_INTENT_MODEL || 'openai/gpt-oss-120b';
+const REASONING_MODEL = process.env.GROQ_REASONING_MODEL || 'llama-3.3-70b-versatile';
+const INTENT_MODEL = process.env.GROQ_INTENT_MODEL || 'llama-3.3-70b-versatile';
 
-const SYSTEM_PROMPT = `Você é a Ana, atendente estrela da Caleb's Tour (CTC) no WhatsApp.
+async function buildDynamicSystemPrompt(userMessage: string): Promise<string> {
+  const knowledgeContext = await buildKnowledgeContext(userMessage);
+
+  return `Você é a Ana, atendente estrela da Caleb's Tour Company (CTC) no WhatsApp.
 Sua missão é encantar clientes, vender passeios e manter um papo humano, divertido e acolhedor.
 
-BASE DE CONHECIMENTO DA EMPRESA:
-${CALEB_INFO}
+INFORMAÇÕES DA EMPRESA:
+- Nome: Caleb's Tour Company (CTC)
+- CNPJ: 26.096.072/0001-78
+- Instagram: @calebstour
+- Telefone: (22) 99824-9911
+- Localização: Região dos Lagos (Arraial do Cabo, Cabo Frio, Búzios)
 
-CATÁLOGO COMPLETO DE PASSEIOS:
-${JSON.stringify(TOURS_INFO, null, 2)}
+=== BASE DE CONHECIMENTO (USE ESTAS INFORMAÇÕES PARA RESPONDER) ===
+${knowledgeContext}
+=== FIM DA BASE DE CONHECIMENTO ===
 
-FAQ GERAL:
-${FAQ_GENERAL.map(f => `P: ${f.p} | R: ${f.r}`).join('\n')}
-
-FAQ POR PERFIL:
-Famílias: ${FAQ_PERFIL.familia_bebe.map(f => `P: ${f.p} | R: ${f.r}`).join('\n')}
-Casais: ${FAQ_PERFIL.casal_lua_de_mel.map(f => `P: ${f.p} | R: ${f.r}`).join('\n')}
-Grupos: ${FAQ_PERFIL.grupo_grande.map(f => `P: ${f.p} | R: ${f.r}`).join('\n')}
-
-FAQ TEMPORADA:
-${Object.values(FAQ_TEMPORADA).flat().map(f => `P: ${f.p} | R: ${f.r}`).join('\n')}
+REGRAS IMPORTANTES:
+1. Use APENAS as informações da base de conhecimento acima para responder sobre preços, passeios e detalhes.
+2. Se uma informação não estiver na base de conhecimento, diga que vai confirmar com a equipe.
+3. Nunca invente preços ou informações.
+4. Seja vendedora: sempre tente avançar para a reserva.
+5. Responda de forma curta e objetiva (estilo WhatsApp).
 
 PERSONALIDADE:
-- Brasileira, carioca, calorosa, usa expressões como "Tudo certo?", "Partiu?", "Fica tranquila".
-- Mensagens com 2-3 frases curtas, usando parágrafos curtos.
+- Brasileira, carioca, calorosa
+- Usa expressões como "Tudo certo?", "Partiu?", "Fica tranquila"
+- Mensagens com 2-3 frases curtas
 - Emojis estratégicos: 😊🌊🚤✨🤿💙🔥
-- Chame o cliente pelo primeiro nome sempre que souber.
-- Traga detalhes concretos dos passeios e sugira próximos passos.
-- Sempre finalize com convite ou pergunta para avançar ("Quer que eu reserve pra você?", "Qual horário combina melhor?").
-- Reforce diferenciais da Caleb's Tour: fotos lindas, atendimento humano, experiência premium.
-- Em preços, mencione faixa e já convide para informar número de pessoas e data.
-- Se não tiver certeza, diga que vai confirmar com o gerente e mantenha o cliente informado.
-- Mantenha o histórico em mente e evite repetir informações.
-- Demonstre empatia real com o tom do cliente (feliz, frustrado, com pressa).`;
+- Chame o cliente pelo primeiro nome quando souber
+- Sempre finalize com convite ou pergunta para avançar
 
-const INTENT_SYSTEM_PROMPT = `Você é um analisador de intenções para uma agência de turismo que vende passeios em Arraial do Cabo, Cabo Frio e região.
-Receba a mensagem do cliente e retorne APENAS JSON válido e minificado seguindo exatamente esta estrutura:
-{"intent":"reserva|preco|duvida|saudacao|reclamacao|elogio|cancelamento","confidence":0.0-1.0,"entities":{"nome":string|null,"data":string|null,"numPessoas":number|null,"passeio":"barco|buggy|quadri|mergulho|jet|escuna|cabo_frio|lancha|catamara|city|hospedagem"|null}}
-Regras:
-- Identifique intenção principal considerando contexto de vendas.
-- Extraia número de pessoas mesmo se escrito por extenso (ex: "duas pessoas" = 2).
-- Datas podem ser relativas ("amanhã", "sábado", "15/02").
-- Passeios devem ser classificados pelas categorias do catálogo.
-- Se não tiver certeza, use null e reduza a confiança, mas mantenha JSON válido.`;
+FORMAS DE PAGAMENTO:
+- PIX (pagamento instantâneo)
+- Boleto bancário
+- Cartão de crédito/débito (presencial)
+- Dinheiro (no embarque)
 
-const ALLOWED_INTENTS = new Set([
-  'reserva',
-  'preco',
-  'duvida',
-  'saudacao',
-  'reclamacao',
-  'elogio',
-  'cancelamento',
-  'desconhecido'
-]);
-
-const PASSEIO_KEYWORDS = [
-  { value: 'arraial', keywords: ['arraial', 'arraial do cabo', 'caribe brasileiro'] },
-  { value: 'cabo_frio', keywords: ['cabo frio'] },
-  { value: 'barco', keywords: ['barco', 'escuna', 'catamarã', 'catamara'] },
-  { value: 'buggy', keywords: ['buggy', 'quadriciclo', 'quadri'] },
-  { value: 'lancha', keywords: ['lancha', 'privado', 'vip'] },
-  { value: 'mergulho', keywords: ['mergulho', 'cilindro', 'snorkel'] },
-  { value: 'city', keywords: ['city tour', 'rio', 'cristoredentor', 'cristo redentor'] },
-  { value: 'hospedagem', keywords: ['pousada', 'hotel', 'hospedagem'] }
-];
-
-const NUMBER_WORDS: Record<string, number> = {
-  'uma': 1,
-  'um': 1,
-  'duas': 2,
-  'dois': 2,
-  'três': 3,
-  'tres': 3,
-  'quatro': 4,
-  'cinco': 5,
-  'seis': 6,
-  'sete': 7,
-  'oito': 8,
-  'nove': 9,
-  'dez': 10
-};
+Quando o cliente quiser pagar ou fechar reserva, pergunte:
+1. CPF (para emitir o comprovante)
+2. Forma de pagamento preferida (PIX ou Boleto)
+3. Confirme os dados antes de gerar o pagamento`;
+}
 
 export async function generateAIResponse(
   userMessage: string,
@@ -103,8 +66,10 @@ export async function generateAIResponse(
   longTermMemories: string[] = []
 ): Promise<string> {
   try {
+    const systemPrompt = await buildDynamicSystemPrompt(userMessage);
+
     const messages: any[] = [
-      { role: 'system', content: SYSTEM_PROMPT }
+      { role: 'system', content: systemPrompt }
     ];
 
     const friendlyName = userName ? userName.split(' ')[0] : null;
@@ -132,8 +97,8 @@ export async function generateAIResponse(
     const completion = await groq.chat.completions.create({
       model: REASONING_MODEL,
       messages,
-      temperature: 0.65,
-      max_tokens: 520,
+      temperature: 0.7,
+      max_tokens: 600,
       top_p: 0.9
     });
 
@@ -146,6 +111,29 @@ export async function generateAIResponse(
     return 'Ops, minha conexão oscilou 😔\nMas não desiste de mim! Pode repetir?';
   }
 }
+
+const INTENT_SYSTEM_PROMPT = `Você é um analisador de intenções para uma agência de turismo.
+Analise a mensagem e retorne APENAS JSON válido seguindo esta estrutura:
+{"intent":"reserva|preco|pagamento|duvida|saudacao|reclamacao|elogio|cancelamento","confidence":0.0-1.0,"entities":{"nome":string|null,"data":string|null,"numPessoas":number|null,"passeio":string|null,"cpf":string|null,"formaPagamento":"pix|boleto|cartao"|null}}
+
+Regras:
+- "pagamento" = quando menciona pagar, PIX, boleto, quero fechar, confirmar pagamento
+- "reserva" = quando quer reservar, agendar, marcar
+- "preco" = quando pergunta valor, quanto custa, tabela de preços
+- Extraia CPF se mencionado (11 dígitos)
+- Extraia forma de pagamento se mencionada`;
+
+const ALLOWED_INTENTS = new Set([
+  'reserva',
+  'preco',
+  'pagamento',
+  'duvida',
+  'saudacao',
+  'reclamacao',
+  'elogio',
+  'cancelamento',
+  'desconhecido'
+]);
 
 export async function detectIntentWithAI(message: string): Promise<{
   intent: string;
@@ -170,7 +158,7 @@ export async function detectIntentWithAI(message: string): Promise<{
         { role: 'user', content: trimmed }
       ],
       temperature: 0.2,
-      max_tokens: 220
+      max_tokens: 250
     });
 
     const content = completion.choices[0]?.message?.content ?? undefined;
@@ -195,6 +183,14 @@ function parseIntentResponse(raw?: string) {
   try {
     return JSON.parse(cleaned);
   } catch {
+    const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        return JSON.parse(jsonMatch[0]);
+      } catch {
+        return null;
+      }
+    }
     return null;
   }
 }
@@ -203,6 +199,7 @@ function sanitizeIntentPayload(payload: any, originalMessage: string) {
   const intentRaw = typeof payload?.intent === 'string' ? payload.intent.toLowerCase() : 'desconhecido';
   const intent = ALLOWED_INTENTS.has(intentRaw) ? intentRaw : 'desconhecido';
   const entities = payload?.entities || {};
+
   const passeio = entities.passeio || detectPasseioKeyword(originalMessage);
   const numFromModel = typeof entities.numPessoas === 'number' ? entities.numPessoas : parseNumber(entities.numPessoas);
   const extractedNum = Number.isFinite(numFromModel) ? numFromModel : extractNumPessoas(originalMessage);
@@ -212,6 +209,8 @@ function sanitizeIntentPayload(payload: any, originalMessage: string) {
   const extractedName = entities.nome && typeof entities.nome === 'string' && entities.nome.trim()
     ? entities.nome.trim()
     : extractName(originalMessage);
+  const extractedCpf = entities.cpf || extractCPF(originalMessage);
+  const extractedPayment = entities.formaPagamento || detectPaymentMethod(originalMessage);
 
   return {
     intent,
@@ -224,13 +223,27 @@ function sanitizeIntentPayload(payload: any, originalMessage: string) {
       nome: extractedName || undefined,
       data: extractedDate || undefined,
       numPessoas: extractedNum || undefined,
-      passeio: passeio || undefined
+      passeio: passeio || undefined,
+      cpf: extractedCpf || undefined,
+      formaPagamento: extractedPayment || undefined
     }
   };
 }
 
 function fallbackIntent(message: string) {
   const text = message.toLowerCase();
+
+  if (matches(text, ['pix', 'boleto', 'pagar', 'pagamento', 'quero fechar', 'vou pagar', 'pode gerar'])) {
+    return {
+      intent: 'pagamento',
+      confidence: 0.85,
+      entities: {
+        passeio: detectPasseioKeyword(text),
+        cpf: extractCPF(text),
+        formaPagamento: detectPaymentMethod(text)
+      }
+    };
+  }
 
   if (matches(text, ['reclama', 'péssimo', 'ruim', 'horrível', 'problema', 'atraso'])) {
     return {
@@ -256,10 +269,10 @@ function fallbackIntent(message: string) {
     };
   }
 
-  if (matches(text, ['preço', 'valor', 'quanto', 'quanto sai', 'tabela'])) {
+  if (matches(text, ['preço', 'preco', 'valor', 'quanto', 'quanto sai', 'tabela', 'quanto custa'])) {
     return {
       intent: 'preco',
-      confidence: 0.72,
+      confidence: 0.78,
       entities: {
         passeio: detectPasseioKeyword(text),
         numPessoas: extractNumPessoas(text)
@@ -267,7 +280,7 @@ function fallbackIntent(message: string) {
     };
   }
 
-  if (matches(text, ['bom dia', 'boa tarde', 'boa noite', 'oi', 'olá', 'ola', 'tudo bem'])) {
+  if (matches(text, ['bom dia', 'boa tarde', 'boa noite', 'oi', 'olá', 'ola', 'tudo bem', 'eai', 'e ai'])) {
     return {
       intent: 'saudacao',
       confidence: 0.7,
@@ -275,7 +288,7 @@ function fallbackIntent(message: string) {
     };
   }
 
-  if (matches(text, ['quero reservar', 'fazer reserva', 'fechar', 'confirmar passeio', 'pode reservar'])) {
+  if (matches(text, ['quero reservar', 'fazer reserva', 'fechar', 'confirmar passeio', 'pode reservar', 'quero agendar', 'marcar'])) {
     return {
       intent: 'reserva',
       confidence: 0.78,
@@ -303,9 +316,21 @@ function matches(text: string, patterns: string[]) {
   return patterns.some(pattern => text.includes(pattern));
 }
 
+const PASSEIO_KEYWORDS = [
+  { value: 'barco_arraial', keywords: ['barco', 'arraial', 'caribe'] },
+  { value: 'escuna', keywords: ['escuna', 'buzios', 'búzios'] },
+  { value: 'quadriciclo', keywords: ['quadriciclo', 'quadri', 'quad'] },
+  { value: 'buggy', keywords: ['buggy', 'dunas'] },
+  { value: 'mergulho', keywords: ['mergulho', 'cilindro', 'batismo'] },
+  { value: 'jet_ski', keywords: ['jet', 'jetski', 'jet ski'] },
+  { value: 'lancha', keywords: ['lancha', 'privado', 'vip', 'exclusivo'] },
+  { value: 'city_tour', keywords: ['city', 'tour', 'rio', 'cristo'] }
+];
+
 function detectPasseioKeyword(text: string) {
+  const normalized = text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   for (const item of PASSEIO_KEYWORDS) {
-    if (item.keywords.some(keyword => text.includes(keyword))) {
+    if (item.keywords.some(keyword => normalized.includes(keyword))) {
       return item.value;
     }
   }
@@ -320,6 +345,15 @@ function parseNumber(value: any) {
   }
   return undefined;
 }
+
+const NUMBER_WORDS: Record<string, number> = {
+  'uma': 1, 'um': 1,
+  'duas': 2, 'dois': 2,
+  'três': 3, 'tres': 3,
+  'quatro': 4, 'cinco': 5,
+  'seis': 6, 'sete': 7,
+  'oito': 8, 'nove': 9, 'dez': 10
+};
 
 function extractNumPessoas(text: string) {
   const explicit = text.match(/(\d+)\s*(pessoas|pessoa|adultos?|criancas?|crianças?)/i);
@@ -349,6 +383,7 @@ function extractDate(text: string) {
   const weekdays = [
     { key: 'segunda', value: 'segunda-feira' },
     { key: 'terça', value: 'terça-feira' },
+    { key: 'terca', value: 'terça-feira' },
     { key: 'quarta', value: 'quarta-feira' },
     { key: 'quinta', value: 'quinta-feira' },
     { key: 'sexta', value: 'sexta-feira' },
@@ -366,6 +401,28 @@ function extractName(text: string) {
   if (nameMatch) {
     return capitalize(nameMatch[1].trim());
   }
+  return undefined;
+}
+
+function extractCPF(text: string): string | undefined {
+  const cpfMatch = text.match(/\d{3}\.?\d{3}\.?\d{3}-?\d{2}/);
+  if (cpfMatch) {
+    return cpfMatch[0].replace(/\D/g, '');
+  }
+
+  const numbersOnly = text.replace(/\D/g, '');
+  if (numbersOnly.length === 11) {
+    return numbersOnly;
+  }
+
+  return undefined;
+}
+
+function detectPaymentMethod(text: string): 'pix' | 'boleto' | 'cartao' | undefined {
+  const lower = text.toLowerCase();
+  if (lower.includes('pix')) return 'pix';
+  if (lower.includes('boleto')) return 'boleto';
+  if (lower.includes('cartao') || lower.includes('cartão') || lower.includes('credito') || lower.includes('crédito')) return 'cartao';
   return undefined;
 }
 
