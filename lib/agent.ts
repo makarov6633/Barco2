@@ -116,7 +116,16 @@ async function handleReservaFlow(telefone: string, message: string, context: Con
     const top5 = passeios.slice(0, 5);
     context.tempData.optionList = top5.map(p => p.nome);
     context.tempData.optionIds = top5.map(p => p.id);
-    const opcoes = top5.map((p, i) => `${i + 1}. ${p.nome.split('-')[0].trim()} (R$ ${p.preco_min || '?'}-${p.preco_max || '?'})`).join('\n');
+    const opcoes = top5.map((p, i) => {
+      const faixa = (p.preco_min != null && p.preco_max != null)
+        ? `R$ ${p.preco_min}-${p.preco_max}`
+        : (p.preco_min != null)
+          ? `R$ ${p.preco_min}`
+          : (p.preco_max != null)
+            ? `R$ ${p.preco_max}`
+            : 'Consulte';
+      return `${i + 1}. ${p.nome.split('-')[0].trim()} (${faixa})`;
+    }).join('\n');
     return `Legal! Vamos fazer sua reserva 😊\n\nQual passeio te interessa?\n\n${opcoes}\n\nResponde com o número ou nome!`;
   }
 
@@ -145,7 +154,18 @@ async function criarReservaECobrar(telefone: string, context: ConversationContex
     const cliente = await getOrCreateCliente(telefone, context.nome);
     if (!cliente) return 'Ops, erro ao criar seu cadastro 😔\nLiga: (22) 99824-9911';
 
-    const valorPorPessoa = passeioSelecionado.preco_min && passeioSelecionado.preco_max ? Math.round((passeioSelecionado.preco_min + passeioSelecionado.preco_max) / 2) : passeioSelecionado.preco_min || 150;
+    const valorPorPessoa = (passeioSelecionado.preco_min != null && passeioSelecionado.preco_max != null)
+      ? Math.round((passeioSelecionado.preco_min + passeioSelecionado.preco_max) / 2)
+      : (passeioSelecionado.preco_min != null)
+        ? passeioSelecionado.preco_min
+        : (passeioSelecionado.preco_max != null)
+          ? passeioSelecionado.preco_max
+          : null;
+
+    if (valorPorPessoa == null) {
+      context.currentFlow = undefined;
+      return 'No momento eu não tenho o valor desse passeio cadastrado na tabela 😔\nVou confirmar com a equipe e já te retorno.\n\nSe preferir, chama no (22) 99824-9911.';
+    }
     const numPessoas = context.tempData!.numPessoas!;
     const dataPasseio = context.tempData!.data!;
     const valorTotal = valorPorPessoa * numPessoas;

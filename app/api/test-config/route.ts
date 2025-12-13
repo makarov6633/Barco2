@@ -6,21 +6,17 @@ export async function GET(req: NextRequest) {
     environment: process.env.NODE_ENV,
     checks: {
       asaas: {
-        configured: !!process.env.ASAAS_API_KEY,
-        value: process.env.ASAAS_API_KEY ? `${process.env.ASAAS_API_KEY.substring(0, 15)}...` : null
+        configured: !!process.env.ASAAS_API_KEY
       },
       groq: {
-        configured: !!process.env.GROQ_API_KEY,
-        value: process.env.GROQ_API_KEY ? `${process.env.GROQ_API_KEY.substring(0, 10)}...` : null
+        configured: !!process.env.GROQ_API_KEY
       },
       twilio: {
         accountSid: {
-          configured: !!process.env.TWILIO_ACCOUNT_SID,
-          value: process.env.TWILIO_ACCOUNT_SID ? `${process.env.TWILIO_ACCOUNT_SID.substring(0, 10)}...` : null
+          configured: !!process.env.TWILIO_ACCOUNT_SID
         },
         authToken: {
-          configured: !!process.env.TWILIO_AUTH_TOKEN,
-          value: process.env.TWILIO_AUTH_TOKEN ? `${process.env.TWILIO_AUTH_TOKEN.substring(0, 10)}...` : null
+          configured: !!process.env.TWILIO_AUTH_TOKEN
         },
         from: {
           configured: !!process.env.TWILIO_WHATSAPP_FROM,
@@ -33,8 +29,7 @@ export async function GET(req: NextRequest) {
           value: process.env.NEXT_PUBLIC_SUPABASE_URL || null
         },
         serviceKey: {
-          configured: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-          value: process.env.SUPABASE_SERVICE_ROLE_KEY ? `${process.env.SUPABASE_SERVICE_ROLE_KEY.substring(0, 15)}...` : null
+          configured: !!process.env.SUPABASE_SERVICE_ROLE_KEY
         }
       }
     }

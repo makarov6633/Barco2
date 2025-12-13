@@ -15,8 +15,8 @@ function getGroq() {
   return cachedGroq;
 }
 
-const REASONING_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
-const INTENT_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
+const REASONING_MODEL = process.env.GROQ_REASONING_MODEL || 'openai/gpt-oss-120b';
+const INTENT_MODEL = process.env.GROQ_INTENT_MODEL || 'openai/gpt-oss-120b';
 
 async function getKnowledgeBase(): Promise<string> {
   const now = Date.now();
@@ -34,9 +34,16 @@ async function getKnowledgeBase(): Promise<string> {
       `## ${chunk.title}\n${chunk.content}\nFonte: ${chunk.source || 'Base interna'}\nTags: ${chunk.tags?.join(', ') || 'N/A'}`
     ).join('\n\n---\n\n');
 
-    const passeiosText = passeios.map(p => 
-      `• ${p.nome} (${p.categoria || 'Geral'}): R$ ${p.preco_min || '?'} - R$ ${p.preco_max || '?'} | Duração: ${p.duracao || 'Consultar'} | Local: ${p.local || 'Região dos Lagos'}`
-    ).join('\n');
+    const passeiosText = passeios.map(p => {
+      const faixa = (p.preco_min != null && p.preco_max != null)
+        ? `R$ ${p.preco_min} - R$ ${p.preco_max}`
+        : (p.preco_min != null)
+          ? `R$ ${p.preco_min}`
+          : (p.preco_max != null)
+            ? `R$ ${p.preco_max}`
+            : 'Consulte';
+      return `• ${p.nome} (${p.categoria || 'Geral'}): ${faixa} | Duração: ${p.duracao || 'Consultar'} | Local: ${p.local || 'Região dos Lagos'}`;
+    }).join('\n');
 
     cachedKnowledge = `
 === BASE DE CONHECIMENTO OFICIAL CALEB'S TOUR ===
