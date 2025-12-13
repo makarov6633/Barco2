@@ -101,6 +101,7 @@ export const TOURS_INFO = {
     duracao: "2h30",
     saidas: ["08:00", "10:30", "13:00", "15:30"],
     capacidade: "2 pessoas por máquina",
+    preco: "R$ 200,00 por quadriciclo",
     descricao_curta: "Adrenalina nas dunas e lagoas.",
     roteiro: [
       "Pedreira",
@@ -122,6 +123,7 @@ export const TOURS_INFO = {
     nome: "Passeio de Buggy",
     categoria: "Aventura Off-Road",
     duracao: "2h",
+    preco: "R$ 250,00 para 02 pessoas",
     descricao_curta: "Passeio clássico e panorâmico para curtir o vento no rosto e as belezas da região.",
     roteiro: [
       "Prainha",
@@ -131,6 +133,26 @@ export const TOURS_INFO = {
       "Praia Grande (pôr do sol no horário da tarde)"
     ],
     faq: []
+  },
+  arubinha_buggy: {
+    nome: "Arubinha de Buggy",
+    categoria: "Aventura Off-Road",
+    duracao: "7h",
+    preco: "R$ 550,00 por buggy",
+    descricao_curta: "Passeio exclusivo de buggy pela região com roteiro completo e aventura off-road.",
+    roteiro: [
+      "Roteiro completo pela região dos lagos",
+      "Praias paradisíacas",
+      "Lagoas cristalinas",
+      "Dunas e mirantes",
+      "Paradas para fotos e banho"
+    ],
+    incluso: ["Fotos e vídeos", "Guia experiente", "Roteiro completo"],
+    ideal_para: ["Famílias que querem aventura", "Grupos de amigos", "Quem quer conhecer toda a região em um único dia"],
+    faq: [
+      { p: "Quantas pessoas cabem?", r: "O buggy comporta até 4 pessoas." },
+      { p: "Tem acréscimo no cartão?", r: "Sim, pagamento em cartão de crédito possui acréscimo de 5%." }
+    ]
   },
   utv: {
     nome: "UTV",
@@ -150,6 +172,7 @@ export const TOURS_INFO = {
     categoria: "Esportes Aquáticos",
     duracao: "Tour total 2-3h (30min de fundo)",
     profundidade: "5 a 10 metros",
+    preco: "R$ 300,00 por pessoa",
     local: "Ilha dos Porcos ou Praia do Forno (depende do mar)",
     regras: ["Idade mínima 10 anos", "Não precisa saber nadar"],
     incluso: ["Equipamento completo", "Instrutor exclusivo", "Fotos subaquáticas", "Lanche"],

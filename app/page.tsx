@@ -56,12 +56,13 @@ const tours = [
     title: 'Quadriciclo',
     image: '/quadriciclo-dunas.jpg',
     description: 'Adrenalina nas dunas e lagoas. Fotos e vídeos GoPro inclusos!',
-    price: 'Consulte',
+    price: 'R$ 200',
     features: [
       'Check-in Praça Lions Club nº17 (Praia Grande) com tolerância de 15 min',
       'Roteiro: Pedreira, Lagoa Vermelha, Praia Grande, Pontal do Atalaia',
       'Uso obrigatório de sapato fechado e CNH; aluguel de crocs R$15'
     ],
+    childPolicy: 'Por quadriciclo',
     whatsappMessage: 'Olá! Quero agendar o Quadriciclo!'
   },
   {
@@ -69,18 +70,29 @@ const tours = [
     title: 'Passeio de Buggy',
     image: '/buggy-dunas-new.jpg',
     description: 'Passeio 4x4 panorâmico com paradas para banho, fotos e mirantes incríveis.',
-    price: 'Consulte',
+    price: 'R$ 250',
     features: ['Roteiro: Prainha, Pontal, lagoas e Praia Grande', 'Ideal para curtir o pôr do sol (tarde)', 'Duração média: 2h com guia'],
+    childPolicy: '02 pessoas',
     whatsappMessage: 'Olá! Quero reservar o Passeio de Buggy!'
+  },
+  {
+    id: 'arubinha-buggy',
+    title: 'Arubinha de Buggy',
+    image: '/buggy-dunas-new.jpg',
+    description: 'Passeio exclusivo de buggy pela região com roteiro completo e aventura off-road.',
+    price: 'R$ 550',
+    features: ['Roteiro completo pela região', 'Fotos e vídeos inclusos', 'Duração: 7 horas de aventura'],
+    childPolicy: 'Por buggy',
+    whatsappMessage: 'Olá! Quero reservar a Arubinha de Buggy!'
   },
   {
     id: 'mergulho',
     title: 'Mergulho de Batismo',
     image: '/mergulho-arraial.jpg',
     description: 'Experiência subaquática segura. Não precisa saber nadar!',
-    price: 'Consulte',
+    price: 'R$ 300',
     features: ['Instrutor exclusivo', 'Fotos subaquáticas inclusas', 'Idade mínima: 10 anos (valor integral)'],
-    childPolicy: 'Integral para todas as idades',
+    childPolicy: 'Por pessoa',
     whatsappMessage: 'Olá! Quero agendar o Mergulho!'
   },
   {
@@ -267,7 +279,8 @@ export default function Home() {
           loop
           muted
           playsInline
-          preload="auto"
+          preload="metadata"
+          loading="lazy"
           className="absolute inset-0 w-full h-full object-cover"
         >
           <source src="/WhatsApp%20Video%202025-12-10%20at%2001.18.34.mp4" type="video/mp4" />
@@ -314,6 +327,8 @@ export default function Home() {
                     fill
                     sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                     className="object-cover group-hover:scale-110 transition-transform duration-700"
+                    loading="lazy"
+                    quality={85}
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-black/70 to-transparent"></div>
                   <h3 className="absolute bottom-3 md:bottom-4 left-3 md:left-4 right-3 text-xl md:text-2xl font-heading text-white tracking-wide">{tour.title}</h3>
@@ -408,6 +423,8 @@ export default function Home() {
                 fill
                 sizes="(max-width: 768px) 80vw, (max-width: 1280px) 40vw, 400px"
                 className="object-cover group-hover:scale-110 transition-transform duration-700"
+                loading="lazy"
+                quality={85}
               />
             </div>
           ))}

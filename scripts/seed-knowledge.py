@@ -190,6 +190,56 @@ chunks = [
         'content': dedent('''\
             Check-in até 11h no píer da Praia dos Anjos (entrada ao lado do Restaurante Saint Tropez). Operado pela equipe da Embarcação Valentyna; é necessário informar nomes, quitar restante e receber pulseiras.
             Inclui água, refrigerante e caipirinha liberados após a primeira parada. Duração aproximada 4h, com bote de apoio, wi-fi, banheiro, macarrões, bar e fotógrafo opcional. Cooler permitido. Saídas diárias às 11h.''')
+    },
+    {
+        'slug': 'passeios/precos-atualizados-2025',
+        'title': 'Tabela de preços atualizada – Dezembro 2025',
+        'source': 'Atualização 13/12/2025',
+        'tags': ['precos','valores','2025'],
+        'content': dedent('''\
+            PREÇOS ATUALIZADOS (Dezembro 2025):
+            
+            PASSEIOS DE BARCO:
+            • Passeio Tradicional: R$ 150 por pessoa
+            • Open Bar: R$ 180 por pessoa
+            • Open Food: R$ 280 por pessoa
+            
+            AVENTURA OFF-ROAD:
+            • Quadriciclo: R$ 200 por quadriciclo
+            • Buggy: R$ 250 para 02 pessoas
+            • Arubinha de Buggy: R$ 550 por buggy (roteiro completo 7h)
+            
+            MERGULHO:
+            • Mergulho de Batismo (com cilindro): R$ 300 por pessoa
+            
+            Crianças de 0 a 4 anos não pagam nos passeios de barco. Taxa de embarque municipal R$ 10 por pessoa (dinheiro).
+            Pagamento em cartão de crédito para buggy e lancha possui acréscimo de 5%.''')
+    },
+    {
+        'slug': 'aventura/arubinha-buggy',
+        'title': 'Arubinha de Buggy – Passeio exclusivo e completo',
+        'source': 'Novo serviço 13/12/2025',
+        'tags': ['buggy','arubinha','aventura','off-road'],
+        'content': dedent('''\
+            ARUBINHA DE BUGGY - R$ 550 por buggy
+            
+            Passeio exclusivo de buggy pela região com roteiro completo e aventura off-road.
+            
+            CARACTERÍSTICAS:
+            • Duração: 7 horas de aventura
+            • Roteiro completo pela região dos lagos
+            • Fotos e vídeos inclusos
+            • Um dia completo de aventura em Arraial do Cabo
+            • Paradas em praias, lagoas e dunas
+            • Guia experiente
+            
+            IDEAL PARA:
+            • Famílias que querem aventura
+            • Grupos de amigos
+            • Quem quer conhecer toda a região em um único dia
+            
+            VALOR: R$ 550 por buggy (comporta até 4 pessoas)
+            Pagamento em cartão de crédito possui acréscimo de 5%.''')
     }
 ]
 
