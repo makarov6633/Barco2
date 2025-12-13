@@ -1,75 +1,64 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getCustomer } from '@/lib/asaas';
-import { generateBillingMessage } from '@/lib/groq-ai';
-import { sendWhatsAppMessage } from '@/lib/twilio';
-import { getConversationContext, saveConversationContext } from '@/lib/supabase';
+import { getCobrancaByAsaasId, updateCobrancaByAsaasId, getReservaById, updateReservaStatus, getClienteById, getPasseioById, generateVoucherCode } from '@/lib/supabase';
+import { sendWhatsAppMessage, formatVoucher, notifyBusiness } from '@/lib/twilio';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
+    console.log('🔔 Webhook Asaas:', JSON.stringify(body, null, 2));
     const { event, payment } = body;
+    if (!payment?.id) return NextResponse.json({ error: 'Payment ID missing' }, { status: 400 });
 
-    console.log(`📡 Asaas Webhook: ${event}`, payment?.id);
-
-    if (event === 'PAYMENT_OVERDUE' || event === 'PAYMENT_CREATED') {
-       if (!payment || !payment.customer) {
-         return NextResponse.json({ error: 'Invalid payload' }, { status: 400 });
-       }
-
-       // 1. Get Customer Details
-       const customer = await getCustomer(payment.customer);
-
-       const phone = customer.mobilePhone ?? customer.phone;
-       if (!phone) {
-         console.log('⚠️ Customer has no phone:', customer.id);
-         return NextResponse.json({ success: false, message: 'No phone number' });
-       }
-
-       // 2. Generate Message
-       const isLate = event === 'PAYMENT_OVERDUE';
-       const message = await generateBillingMessage(
-         customer.name, 
-         payment.description || 'Passeio', 
-         payment.invoiceUrl, 
-         isLate
-       );
-
-       // 3. Send WhatsApp
-       const sent = await sendWhatsAppMessage(phone, message);
-       
-       if (sent) {
-         console.log(`✅ Message sent to ${customer.name} (${phone})`);
-         
-         // 4. Log to Supabase History
-         try {
-             // Normalized phone format handling might be needed depending on DB, 
-             // but usually Twilio/Asaas share similar formats (E.164 or plain)
-             // Asaas usually sends raw (e.g., 2299887766), we might need to query carefully.
-             // lib/supabase.ts doesn't normalize, so we assume exact match or just save what we have.
-             
-             const context = await getConversationContext(phone);
-             context.conversationHistory.push({
-                 role: 'assistant',
-                 content: `[SISTEMA DE COBRANÇA]: ${message}`
-             });
-             await saveConversationContext(context);
-             console.log('✅ Interaction logged to Supabase');
-         } catch (dbError) {
-             console.error('⚠️ Failed to log to Supabase:', dbError);
-             // Non-blocking error
-         }
-
-       } else {
-         console.error(`❌ Failed to send to ${customer.name}`);
-       }
-       
-       return NextResponse.json({ success: true, message: 'Processed' });
+    const cobranca = await getCobrancaByAsaasId(payment.id);
+    if (!cobranca) {
+      console.log('⚠️ Cobrança não encontrada:', payment.id);
+      return NextResponse.json({ received: true, message: 'Cobranca not found' });
     }
 
-    return NextResponse.json({ received: true });
+    if (event === 'PAYMENT_CONFIRMED' || event === 'PAYMENT_RECEIVED') {
+      console.log('💰 Pagamento confirmado:', payment.id);
+      await updateCobrancaByAsaasId(payment.id, { status: 'CONFIRMADO', pago_em: new Date().toISOString() });
+
+      const reserva = await getReservaById(cobranca.reserva_id);
+      if (!reserva) break;
+
+      const voucherCode = generateVoucherCode();
+      await updateReservaStatus(cobranca.reserva_id, 'CONFIRMADO', voucherCode);
+
+      const [cliente, passeio] = await Promise.all([getClienteById(cobranca.cliente_id), getPasseioById(reserva.passeio_id)]);
+
+      if (cliente?.telefone) {
+        const voucherMessage = formatVoucher({
+          voucherCode,
+          clienteNome: cliente.nome,
+          passeioNome: passeio?.nome || 'Passeio',
+          data: reserva.data_passeio,
+          horario: '09:00',
+          numPessoas: reserva.num_pessoas,
+          valorTotal: reserva.valor_total,
+          pontoEncontro: passeio?.local || 'Cais da Praia dos Anjos'
+        });
+        const whatsappTo = cliente.telefone.startsWith('whatsapp:') ? cliente.telefone : `whatsapp:${cliente.telefone}`;
+        await sendWhatsAppMessage(whatsappTo, voucherMessage);
+        console.log('✅ Voucher enviado para:', cliente.telefone);
+      }
+
+      await notifyBusiness({ type: 'NOVA_RESERVA', data: { nome: cliente?.nome, telefone: cliente?.telefone, passeio: passeio?.nome, data: reserva.data_passeio, numPessoas: reserva.num_pessoas, voucher: voucherCode, valor: reserva.valor_total, status: 'PAGO ✅' } });
+    } else if (event === 'PAYMENT_OVERDUE') {
+      await updateCobrancaByAsaasId(payment.id, { status: 'EXPIRADO' });
+      await updateReservaStatus(cobranca.reserva_id, 'EXPIRADO');
+    } else if (event === 'PAYMENT_DELETED' || event === 'PAYMENT_REFUNDED') {
+      await updateCobrancaByAsaasId(payment.id, { status: 'CANCELADO' });
+      await updateReservaStatus(cobranca.reserva_id, 'CANCELADO');
+    }
+
+    return NextResponse.json({ received: true, event });
   } catch (error) {
-    console.error('Webhook Error:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    console.error('❌ Erro webhook Asaas:', error);
+    return NextResponse.json({ error: 'Internal error' }, { status: 500 });
   }
 }
 
+export async function GET() {
+  return NextResponse.json({ status: '🟢 ONLINE', service: 'Asaas Webhook', timestamp: new Date().toISOString() });
+}

@@ -77,6 +77,9 @@ export interface ConversationContext {
     email?: string;
     optionList?: string[];
     optionIds?: string[];
+    reservaId?: string;
+    valorTotal?: number;
+    passeioNome?: string;
   };
   lastIntent?: string;
   lastMessage?: string;
@@ -248,4 +251,107 @@ export function generateVoucherCode(): string {
     code += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return code;
+}
+
+export interface KnowledgeChunk {
+  id: string;
+  slug: string;
+  title: string;
+  content: string;
+  source?: string;
+  tags?: string[];
+  created_at?: string;
+}
+
+export async function getAllKnowledgeChunks(): Promise<KnowledgeChunk[]> {
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from('knowledge_chunks')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.error('Erro ao buscar knowledge_chunks:', error);
+      return [];
+    }
+    return data || [];
+  } catch (error) {
+    console.error('Erro ao buscar knowledge_chunks:', error);
+    return [];
+  }
+}
+
+export interface Cobranca {
+  id?: string;
+  reserva_id: string;
+  cliente_id: string;
+  asaas_id?: string;
+  tipo: 'PIX' | 'BOLETO';
+  valor: number;
+  status: 'PENDENTE' | 'CONFIRMADO' | 'EXPIRADO' | 'CANCELADO';
+  pix_qrcode?: string;
+  pix_copiacola?: string;
+  boleto_url?: string;
+  vencimento: string;
+  pago_em?: string;
+}
+
+export async function createCobranca(cobranca: Omit<Cobranca, 'id'>): Promise<Cobranca | null> {
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase.from('cobrancas').insert(cobranca).select().single();
+    if (error) { console.error('Erro ao criar cobrança:', error); return null; }
+    return data;
+  } catch (error) { console.error('Erro ao criar cobrança:', error); return null; }
+}
+
+export async function updateCobrancaByAsaasId(asaasId: string, updates: Partial<Cobranca>): Promise<Cobranca | null> {
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase.from('cobrancas').update(updates).eq('asaas_id', asaasId).select().single();
+    if (error) return null;
+    return data;
+  } catch { return null; }
+}
+
+export async function getCobrancaByAsaasId(asaasId: string): Promise<Cobranca | null> {
+  try {
+    const supabase = getSupabase();
+    const { data } = await supabase.from('cobrancas').select('*').eq('asaas_id', asaasId).single();
+    return data;
+  } catch { return null; }
+}
+
+export async function getReservaById(reservaId: string): Promise<Reserva | null> {
+  try {
+    const supabase = getSupabase();
+    const { data } = await supabase.from('reservas').select('*').eq('id', reservaId).single();
+    return data;
+  } catch { return null; }
+}
+
+export async function updateReservaStatus(reservaId: string, status: string, voucher?: string): Promise<boolean> {
+  try {
+    const supabase = getSupabase();
+    const updates: any = { status };
+    if (voucher) updates.voucher = voucher;
+    const { error } = await supabase.from('reservas').update(updates).eq('id', reservaId);
+    return !error;
+  } catch { return false; }
+}
+
+export async function getClienteById(clienteId: string): Promise<Cliente | null> {
+  try {
+    const supabase = getSupabase();
+    const { data } = await supabase.from('clientes').select('*').eq('id', clienteId).single();
+    return data;
+  } catch { return null; }
+}
+
+export async function getPasseioById(passeioId: string): Promise<Passeio | null> {
+  try {
+    const supabase = getSupabase();
+    const { data } = await supabase.from('passeios').select('*').eq('id', passeioId).single();
+    return data;
+  } catch { return null; }
 }

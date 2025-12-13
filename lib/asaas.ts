@@ -1,132 +1,63 @@
-import { Cliente } from './supabase';
+const ASAAS_API_URL = 'https://api.asaas.com/v3';
 
-const ASAAS_API_URL = 'https://www.asaas.com/api/v3';
-
-export interface AsaasCustomer {
-  id: string;
-  name: string;
-  email: string;
-  cpfCnpj: string;
-  mobilePhone?: string;
-  phone?: string;
+function getAsaasApiKey(): string {
+  const key = process.env.ASAAS_API_KEY;
+  if (!key) throw new Error('ASAAS_API_KEY não configurada');
+  return key;
 }
 
-export interface AsaasPayment {
-  id: string;
-  dateCreated: string;
-  customer: string;
-  paymentLink?: string;
-  value: number;
-  netValue: number;
-  originalValue?: number;
-  interestValue?: number;
-  description: string;
-  billingType: 'BOLETO' | 'CREDIT_CARD' | 'PIX' | 'UNDEFINED';
-  status: 'PENDING' | 'RECEIVED' | 'CONFIRMED' | 'OVERDUE' | 'REFUNDED' | 'RECEIVED_IN_CASH' | 'REFUND_REQUESTED' | 'CHARGEBACK_REQUESTED' | 'CHARGEBACK_DISPUTE' | 'AWAITING_CHARGEBACK_REVERSAL' | 'DUNNING_REQUESTED' | 'DUNNING_RECEIVED' | 'AWAITING_RISK_ANALYSIS';
-  dueDate: string;
-  invoiceUrl: string;
-  bankSlipUrl?: string;
-}
-
-async function fetchAsaas(endpoint: string, options: RequestInit = {}) {
-  const url = `${ASAAS_API_URL}${endpoint}`;
-  const apiKey = process.env.ASAAS_API_KEY;
-  if (!apiKey) {
-    throw new Error('ASAAS_API_KEY environment variable is missing or empty.');
-  }
-
-  const headers = {
-    'Content-Type': 'application/json',
-    'access_token': apiKey,
-    ...options.headers,
-  };
-
-  const response = await fetch(url, { ...options, headers });
-  
+async function asaasRequest(endpoint: string, options: RequestInit = {}) {
+  const apiKey = getAsaasApiKey();
+  const response = await fetch(`${ASAAS_API_URL}${endpoint}`, {
+    ...options,
+    headers: { 'Content-Type': 'application/json', 'access_token': apiKey, ...options.headers },
+  });
+  const data = await response.json();
   if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(`Asaas API Error: ${response.status} ${response.statusText} - ${errorBody}`);
+    console.error('Asaas API Error:', data);
+    throw new Error(data.errors?.[0]?.description || 'Erro na API Asaas');
   }
-
-  return response.json();
+  return data;
 }
 
-/**
- * Creates or retrieves a customer in Asaas
- */
-export async function createAsaasCustomer(cliente: Cliente): Promise<AsaasCustomer> {
-  // First search if exists (by CPF or Email)
-  // Note: Asaas allows searching by cpfCnpj or email
-  let searchParams = '';
-  if (cliente.cpf) searchParams = `cpfCnpj=${cliente.cpf}`;
-  else if (cliente.email) searchParams = `email=${cliente.email}`;
+export interface AsaasCustomer { id: string; name: string; cpfCnpj?: string; email?: string; phone?: string; }
+export interface AsaasPayment { id: string; customer: string; value: number; billingType: string; status: string; dueDate: string; bankSlipUrl?: string; }
+export interface AsaasPixQrCode { encodedImage: string; payload: string; expirationDate: string; }
 
-  if (searchParams) {
-    const searchResult = await fetchAsaas(`/customers?${searchParams}`);
-    if (searchResult.data && searchResult.data.length > 0) {
-      return searchResult.data[0];
-    }
+export async function findOrCreateCustomer(params: { name: string; cpfCnpj?: string; email?: string; phone?: string; }): Promise<AsaasCustomer> {
+  if (params.cpfCnpj) {
+    const cleanCpf = params.cpfCnpj.replace(/\D/g, '');
+    const existing = await asaasRequest(`/customers?cpfCnpj=${cleanCpf}`);
+    if (existing.data?.length > 0) return existing.data[0];
   }
-
-  // If not found, create
-  const payload = {
-    name: cliente.nome,
-    email: cliente.email || `cliente_${cliente.telefone}@temp.com`, // Email is often required
-    cpfCnpj: cliente.cpf,
-    mobilePhone: cliente.telefone,
-    externalReference: cliente.id
-  };
-
-  const newCustomer = await fetchAsaas('/customers', {
+  return asaasRequest('/customers', {
     method: 'POST',
-    body: JSON.stringify(payload)
-  });
-
-  return newCustomer;
-}
-
-/**
- * Retrieves a customer by ID
- */
-export async function getCustomer(customerId: string): Promise<AsaasCustomer> {
-  return fetchAsaas(`/customers/${customerId}`);
-}
-
-/**
- * Creates a Pix payment charge
- */
-export async function createPixCharge(
-  asaasCustomerId: string, 
-  value: number, 
-  dueDate: string, 
-  description: string,
-  externalReference?: string
-): Promise<AsaasPayment> {
-  const payload = {
-    customer: asaasCustomerId,
-    billingType: 'PIX',
-    value,
-    dueDate,
-    description,
-    externalReference
-  };
-
-  return fetchAsaas('/payments', {
-    method: 'POST',
-    body: JSON.stringify(payload)
+    body: JSON.stringify({ name: params.name, cpfCnpj: params.cpfCnpj?.replace(/\D/g, ''), email: params.email, mobilePhone: params.phone?.replace(/\D/g, '') }),
   });
 }
 
-/**
- * Gets the Pix QR Code and Payload for a payment
- */
-export async function getPixQrCode(paymentId: string): Promise<{ encodedImage: string, payload: string, expirationDate: string }> {
-  return fetchAsaas(`/payments/${paymentId}/pixQrCode`);
+export async function createPixPayment(params: { customerId: string; value: number; description: string; externalReference?: string; }): Promise<{ payment: AsaasPayment; pixQrCode: AsaasPixQrCode }> {
+  const dueDate = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const payment = await asaasRequest('/payments', {
+    method: 'POST',
+    body: JSON.stringify({ customer: params.customerId, billingType: 'PIX', value: params.value, dueDate, description: params.description, externalReference: params.externalReference }),
+  });
+  const pixQrCode = await asaasRequest(`/payments/${payment.id}/pixQrCode`);
+  return { payment, pixQrCode };
 }
 
-/**
- * Retrieves a payment by ID
- */
-export async function getPayment(paymentId: string): Promise<AsaasPayment> {
-  return fetchAsaas(`/payments/${paymentId}`);
+export async function createBoletoPayment(params: { customerId: string; value: number; description: string; externalReference?: string; }): Promise<AsaasPayment> {
+  const dueDate = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  return asaasRequest('/payments', {
+    method: 'POST',
+    body: JSON.stringify({ customer: params.customerId, billingType: 'BOLETO', value: params.value, dueDate, description: params.description, externalReference: params.externalReference }),
+  });
+}
+
+export function formatPixMessage(pixQrCode: AsaasPixQrCode, valor: number): string {
+  return `💳 *PAGAMENTO VIA PIX*\n\n💰 Valor: R$ ${valor.toFixed(2)}\n\n📱 *Copie o código abaixo:*\n\`\`\`\n${pixQrCode.payload}\n\`\`\`\n\n⏰ Válido até: ${new Date(pixQrCode.expirationDate).toLocaleString('pt-BR')}\n\n✅ Após o pagamento, você receberá seu voucher automaticamente!\n\n📞 Dúvidas: (22) 99824-9911`;
+}
+
+export function formatBoletoMessage(payment: AsaasPayment, valor: number): string {
+  return `💳 *PAGAMENTO VIA BOLETO*\n\n💰 Valor: R$ ${valor.toFixed(2)}\n\n🔗 *Link do boleto:*\n${payment.bankSlipUrl}\n\n📅 Vencimento: ${new Date(payment.dueDate).toLocaleDateString('pt-BR')}\n\n✅ Após o pagamento, você receberá seu voucher automaticamente.\n\n📞 Dúvidas: (22) 99824-9911`;
 }
