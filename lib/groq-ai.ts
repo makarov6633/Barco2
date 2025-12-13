@@ -1,5 +1,6 @@
 import Groq from 'groq-sdk';
-import { FAQ_GENERAL, TOURS_INFO, CALEB_INFO, FAQ_PERFIL, FAQ_TEMPORADA } from './knowledge-base';
+import { FAQ_GENERAL, CALEB_INFO, FAQ_PERFIL, FAQ_TEMPORADA } from './knowledge-base';
+import { AVAILABLE_TOOLS } from './tools';
 
 let cachedGroq: Groq | null = null;
 
@@ -18,7 +19,23 @@ const INTENT_MODEL = process.env.GROQ_INTENT_MODEL || 'openai/gpt-oss-120b';
 const SYSTEM_PROMPT = `Você é a Ana, atendente estrela da Caleb's Tour (CTC) no WhatsApp.
 Sua missão é encantar clientes, vender passeios e manter um papo humano, divertido e acolhedor.
 
-⚠️ REGRA DE OURO: SEMPRE use APENAS os dados dos passeios disponíveis no banco de dados que serão fornecidos. NUNCA invente preços, horários ou informações.
+⚠️ REGRA DE OURO: Use APENAS os dados dos passeios disponíveis no banco de dados. NUNCA invente preços ou informações.
+
+FERRAMENTAS DISPONÍVEIS:
+Você tem acesso a ferramentas que pode usar quando necessário. Para usá-las, responda com o formato:
+[TOOL:nome_da_ferramenta]
+{"parametro1": "valor1", "parametro2": "valor2"}
+[/TOOL]
+
+Ferramentas:
+${AVAILABLE_TOOLS.map(t => `- ${t.name}: ${t.description}\n  Parâmetros: ${JSON.stringify(t.parameters)}`).join('\n\n')}
+
+QUANDO USAR FERRAMENTAS:
+- consultar_passeios: Quando precisar listar todos os passeios
+- buscar_passeio_especifico: Quando cliente perguntar sobre um passeio específico
+- criar_reserva: Quando tiver TODAS as informações (telefone, nome, passeio_id, data, num_pessoas)
+- gerar_pagamento: Depois de criar_reserva, quando cliente quiser pagar
+- gerar_voucher: Após pagamento confirmado
 
 BASE DE CONHECIMENTO DA EMPRESA:
 ${CALEB_INFO}
@@ -35,30 +52,33 @@ FAQ TEMPORADA:
 ${Object.values(FAQ_TEMPORADA).flat().map(f => `P: ${f.p} | R: ${f.r}`).join('\n')}
 
 COMO RESPONDER:
-1. SOBRE PREÇOS: Consulte a lista de passeios do banco de dados e mencione a faixa de preço exata (R$ X - R$ Y). Pergunte quantas pessoas vão para calcular o valor total.
+1. SOBRE PREÇOS: Use os dados do banco fornecidos. Mencione faixa exata (R$ X - R$ Y). Pergunte quantas pessoas.
 
-2. SOBRE RESERVAS: Quando o cliente quiser fazer uma reserva, você precisa coletar de forma natural e conversacional:
-   - Qual passeio (se não souber, sugira os 3 principais do banco de dados)
+2. SOBRE RESERVAS: Colete naturalmente:
+   - Qual passeio (ID do passeio do banco de dados)
    - Data desejada
-   - Número de pessoas
-   - Nome completo do cliente
-   Vá perguntando uma coisa de cada vez de forma amigável. Se o cliente fornecer várias informações de uma vez, reconheça e peça apenas o que falta.
+   - Número de pessoas  
+   - Nome completo
+   - Telefone
+   Quando tiver TUDO, use a ferramenta criar_reserva.
 
-3. DÚVIDAS GERAIS: Responda baseado no FAQ e sempre ofereça ajuda adicional.
+3. SOBRE PAGAMENTO: Após criar reserva, pergunte se quer PIX ou Boleto, depois use gerar_pagamento.
+
+4. DÚVIDAS GERAIS: Responda baseado no FAQ.
 
 PERSONALIDADE:
-- Brasileira, carioca, calorosa. Use "Tudo certo?", "Partiu?", "Beleza!".
-- Mensagens com 2-3 frases curtas, parágrafos curtos.
-- Emojis estratégicos: 😊🌊🚤✨🤿💙
-- Chame pelo primeiro nome quando souber.
-- Seja proativa: sugira, recomende, convide para próximos passos.
-- Demonstre empatia real com o tom do cliente.
+- Brasileira, carioca, calorosa. "Tudo certo?", "Partiu?", "Beleza!".
+- 2-3 frases curtas, parágrafos curtos.
+- Emojis: 😊🌊🚤✨🤿💙
+- Chame pelo primeiro nome.
+- Seja proativa: sugira, recomende.
+- Finalize sempre com pergunta ou convite.
 
 IMPORTANTE:
-- Use APENAS dados do banco fornecido (preços, durações, locais).
-- Se não souber algo, diga que vai confirmar com o gerente.
-- Mantenha consistência: não repita informações já dadas.
-- Finalize sempre com pergunta ou convite para ação.`;
+- Use APENAS dados do banco fornecido.
+- Se não souber, diga que vai confirmar.
+- Não repita informações já dadas.
+- Use ferramentas quando apropriado.`;
 
 const INTENT_SYSTEM_PROMPT = `Você é um analisador de intenções para uma agência de turismo que vende passeios em Arraial do Cabo, Cabo Frio e região.
 Receba a mensagem do cliente e retorne APENAS JSON válido e minificado seguindo exatamente esta estrutura:
@@ -114,8 +134,9 @@ export async function generateAIResponse(
   userName?: string,
   longTermMemories: string[] = [],
   passeiosDisponiveis?: string,
-  specialContext?: string
-): Promise<string> {
+  specialContext?: string,
+  telefone?: string
+): Promise<{ response: string; toolCall?: { name: string; parameters: any } }> {
   try {
     const messages: any[] = [
       { role: 'system', content: SYSTEM_PROMPT }
@@ -130,7 +151,7 @@ export async function generateAIResponse(
     if (passeiosDisponiveis) {
       messages.push({
         role: 'system',
-        content: `PASSEIOS DISPONÍVEIS NO BANCO DE DADOS (USE APENAS ESTES DADOS REAIS):\n${passeiosDisponiveis}`
+        content: `PASSEIOS DISPONÍVEIS NO BANCO DE DADOS (USE APENAS ESTES):\n${passeiosDisponiveis}`
       });
     }
 
@@ -138,6 +159,13 @@ export async function generateAIResponse(
       messages.push({
         role: 'system',
         content: specialContext
+      });
+    }
+
+    if (telefone) {
+      messages.push({
+        role: 'system',
+        content: `Telefone do cliente: ${telefone}`
       });
     }
 
@@ -165,13 +193,32 @@ export async function generateAIResponse(
       top_p: 0.9
     });
 
-    const response = completion.choices[0]?.message?.content ||
+    const rawResponse = completion.choices[0]?.message?.content ||
       'Opa, falhou aqui! Me manda de novo? 😅';
 
-    return response.trim();
+    // Detectar se a IA quer usar uma ferramenta
+    const toolMatch = rawResponse.match(/\[TOOL:(\w+)\]\s*({[^}]+})\s*\[\/TOOL\]/s);
+    
+    if (toolMatch) {
+      const toolName = toolMatch[1];
+      const toolParams = JSON.parse(toolMatch[2]);
+      
+      // Remover a marcação da ferramenta da resposta
+      const cleanResponse = rawResponse.replace(/\[TOOL:\w+\]\s*{[^}]+}\s*\[\/TOOL\]/s, '').trim();
+      
+      return {
+        response: cleanResponse || 'Processando...',
+        toolCall: {
+          name: toolName,
+          parameters: toolParams
+        }
+      };
+    }
+
+    return { response: rawResponse.trim() };
   } catch (error) {
     console.error('Erro Groq:', error);
-    return 'Ops, minha conexão oscilou 😔\nMas não desiste de mim! Pode repetir?';
+    return { response: 'Ops, minha conexão oscilou 😔\nMas não desiste de mim! Pode repetir?' };
   }
 }
 

@@ -1,15 +1,13 @@
 import { 
   getConversationContext, 
   saveConversationContext, 
-  getOrCreateCliente,
   getAllPasseios,
-  createReserva,
-  generateVoucherCode,
   ConversationContext,
   MemoryEntry 
 } from './supabase';
 import { generateAIResponse, detectIntentWithAI } from './groq-ai';
-import { notifyBusiness, formatVoucher } from './twilio';
+import { notifyBusiness } from './twilio';
+import { executeTool, AVAILABLE_TOOLS, ToolCall } from './tools';
 
 export async function processMessage(telefone: string, message: string): Promise<string> {
   const startTime = Date.now();
@@ -50,7 +48,7 @@ export async function processMessage(telefone: string, message: string): Promise
       });
     }
 
-    // PRIORIDADE 2: Atualizar dados da reserva com análise
+    // PRIORIDADE 2: Atualizar dados com análise
     if (context.currentFlow === 'reserva') {
       // Atualizar tempData com entidades detectadas
       if (analysis.entities.passeio && !context.tempData?.passeio) {
@@ -65,89 +63,82 @@ export async function processMessage(telefone: string, message: string): Promise
         context.tempData = context.tempData || {};
         context.tempData.numPessoas = analysis.entities.numPessoas;
       }
-      if (analysis.entities.nome && !context.nome) {
-        context.nome = analysis.entities.nome;
-      }
-      
-      // Se for uma seleção numérica e temos opções
-      if (context.tempData?.optionList?.length) {
-        const normalizedMessage = normalizeString(message);
-        const selectionIndex = detectOptionSelection(normalizedMessage);
-
-        if (selectionIndex !== null && context.tempData.optionList[selectionIndex]) {
-          context.tempData.passeio = context.tempData.optionList[selectionIndex];
-          if (context.tempData.optionIds?.[selectionIndex]) {
-            context.tempData.passeioId = context.tempData.optionIds[selectionIndex];
-          }
-          context.tempData.optionList = undefined;
-          context.tempData.optionIds = undefined;
-        }
-      }
     }
 
-    // PRIORIDADE 3: Conversa com contexto especial (preço, reserva, etc)
-    // A IA interpreta e responde naturalmente com os dados do banco
-
-    // PRIORIDADE 4: Conversa com IA (sempre)
+    // PRIORIDADE 3: Conversa com IA (sempre)
     const memoryPrompts = buildMemoryPrompts(context);
 
-    // Buscar passeios do banco de dados para fornecer informações precisas
+    // Buscar passeios do banco de dados
     const passeios = await getAllPasseios();
     const passeiosInfo = passeios.map(p => 
-      `${p.nome} - R$ ${p.preco_min || 'Consulte'} a R$ ${p.preco_max || 'Consulte'} - ${p.duracao || 'Consulte duração'} - ${p.local || ''}`
+      `ID: ${p.id} | ${p.nome} | R$ ${p.preco_min || 'Consulte'}-${p.preco_max || 'Consulte'} | ${p.duracao || 'Consultar'} | ${p.local || ''}`
     ).join('\n');
 
-    // Preparar contexto especial baseado na intenção
-    let specialContext = '';
-    if (analysis.intent === 'reserva' || context.currentFlow === 'reserva') {
-      if (!context.currentFlow) {
-        context.currentFlow = 'reserva';
-        context.tempData = {
-          passeio: analysis.entities.passeio,
-          data: analysis.entities.data,
-          numPessoas: analysis.entities.numPessoas
-        };
-      }
-      
-      const faltando = [];
-      if (!context.tempData?.passeio && !context.tempData?.passeioId) faltando.push('qual passeio');
-      if (!context.tempData?.data) faltando.push('data');
-      if (!context.tempData?.numPessoas) faltando.push('número de pessoas');
-      if (!context.nome) faltando.push('nome completo');
-      
-      if (faltando.length > 0) {
-        specialContext = `MODO RESERVA ATIVO: Você está coletando informações para uma reserva. Ainda falta: ${faltando.join(', ')}. Pergunte de forma natural e amigável.`;
-      } else {
-        // Criar reserva
-        const reservaResult = await criarReservaFinal(telefone, context);
-        context.conversationHistory.push(
-          { role: 'user', content: message },
-          { role: 'assistant', content: reservaResult }
-        );
-        context.lastMessage = message;
-        context.lastIntent = analysis.intent;
-        context.lastMessageTime = new Date().toISOString();
-        await saveConversationContext(context);
-        console.log(`✅ Respondido em ${Date.now() - startTime}ms`);
-        return reservaResult;
+    // Preparar contexto da conversa
+    let conversationContext = '';
+    if (context.currentFlow === 'reserva' && context.tempData) {
+      const info = [];
+      if (context.tempData.passeio) info.push(`Passeio: ${context.tempData.passeio}`);
+      if (context.tempData.passeioId) info.push(`ID Passeio: ${context.tempData.passeioId}`);
+      if (context.tempData.data) info.push(`Data: ${context.tempData.data}`);
+      if (context.tempData.numPessoas) info.push(`Pessoas: ${context.tempData.numPessoas}`);
+      if (context.nome) info.push(`Nome: ${context.nome}`);
+      if (info.length > 0) {
+        conversationContext = `DADOS COLETADOS DA RESERVA: ${info.join(', ')}`;
       }
     }
 
-    const response = await generateAIResponse(
+    // Gerar resposta com IA (pode incluir chamada de ferramenta)
+    const aiResult = await generateAIResponse(
       message, 
       context.conversationHistory,
       context.nome,
       memoryPrompts,
       passeiosInfo,
-      specialContext
+      conversationContext,
+      telefone
     );
+
+    let finalResponse = aiResult.response;
+
+    // Se a IA decidiu chamar uma ferramenta, executar
+    if (aiResult.toolCall) {
+      console.log(`🛠️ IA decidiu usar ferramenta: ${aiResult.toolCall.name}`);
+      const toolResult = await executeTool(aiResult.toolCall);
+      
+      if (toolResult.success) {
+        // Passar resultado da ferramenta de volta para IA formular resposta
+        const followUpResult = await generateAIResponse(
+          `[RESULTADO DA FERRAMENTA ${aiResult.toolCall.name}: ${JSON.stringify(toolResult.data)}]`,
+          [...context.conversationHistory, 
+            { role: 'user', content: message },
+            { role: 'assistant', content: aiResult.response }
+          ],
+          context.nome,
+          memoryPrompts,
+          passeiosInfo,
+          conversationContext,
+          telefone
+        );
+        finalResponse = followUpResult.response;
+
+        // Se criou reserva, atualizar contexto
+        if (aiResult.toolCall.name === 'criar_reserva' && toolResult.data) {
+          context.tempData = context.tempData || {};
+          context.tempData.reserva_id = toolResult.data.reserva_id;
+          context.tempData.voucher_code = toolResult.data.voucher_code;
+        }
+      } else {
+        finalResponse += `\n\n[Erro ao processar: ${toolResult.error}]`;
+      }
+    }
 
     captureMemoriesFromInteraction(context, analysis, message);
 
     // Atualizar histórico
     context.conversationHistory.push(
       { role: 'user', content: message },
-      { role: 'assistant', content: response }
+      { role: 'assistant', content: finalResponse }
     );
 
     if (context.conversationHistory.length > 20) {
@@ -161,7 +152,7 @@ export async function processMessage(telefone: string, message: string): Promise
     await saveConversationContext(context);
 
     console.log(`✅ Respondido em ${Date.now() - startTime}ms`);
-    return response;
+    return finalResponse;
 
   } catch (error) {
     console.error('❌ Erro ao processar mensagem:', error);
@@ -171,162 +162,7 @@ export async function processMessage(telefone: string, message: string): Promise
 
 
 
-async function criarReservaFinal(telefone: string, context: ConversationContext): Promise<string> {
-  try {
-    const passeios = await getAllPasseios();
-
-    let passeioSelecionado = context.tempData?.passeioId
-      ? passeios.find(p => p.id === context.tempData!.passeioId)
-      : undefined;
-
-    if (!passeioSelecionado && context.tempData?.passeio) {
-      const target = normalizeString(context.tempData.passeio);
-      passeioSelecionado = passeios.find(p => {
-        const nomeNormalizado = normalizeString(p.nome);
-        const categoriaNormalizada = normalizeString(p.categoria || '');
-        return nomeNormalizado.includes(target) || categoriaNormalizada.includes(target);
-      });
-    }
-
-    if (!passeioSelecionado) {
-      context.currentFlow = undefined;
-      context.tempData = {};
-      return 'Hmm, não encontrei esse passeio 🤔\nQuer ver a lista completa? Me diz "ver passeios"';
-    }
-
-    const cliente = await getOrCreateCliente(telefone, context.nome);
-    if (!cliente) {
-      return 'Ops, erro ao criar seu cadastro 😔\nTenta de novo ou liga: (22) 99824-9911';
-    }
-
-    const voucherCode = generateVoucherCode();
-    const valorPorPessoa = passeioSelecionado.preco_min && passeioSelecionado.preco_max
-      ? (passeioSelecionado.preco_min + passeioSelecionado.preco_max) / 2
-      : passeioSelecionado.preco_min || passeioSelecionado.preco_max || 200;
-    const numPessoas = context.tempData!.numPessoas!;
-    const dataPasseio = context.tempData!.data!;
-    const valorTotal = valorPorPessoa * numPessoas;
-
-    const reserva = await createReserva({
-      cliente_id: cliente.id,
-      passeio_id: passeioSelecionado.id,
-      data_passeio: dataPasseio,
-      num_pessoas: numPessoas,
-      voucher: voucherCode,
-      status: 'PENDENTE',
-      valor_total: valorTotal,
-      observacoes: 'Reserva via WhatsApp'
-    });
-
-    if (!reserva) {
-      return 'Erro ao criar reserva 😔\nLiga pra gente: (22) 99824-9911';
-    }
-
-    // Notificar empresa
-    await notifyBusiness({
-      type: 'NOVA_RESERVA',
-      data: {
-        nome: context.nome,
-        telefone,
-        passeio: passeioSelecionado.nome,
-        data: dataPasseio,
-        numPessoas,
-        voucher: voucherCode,
-        valor: valorTotal,
-        status: 'PENDENTE'
-      }
-    });
-
-    rememberMemory(context, {
-      type: 'booking',
-      value: `Reserva ${passeioSelecionado.nome} em ${dataPasseio} para ${numPessoas} pessoa(s). Voucher ${voucherCode}.`,
-      tags: ['reserva', passeioSelecionado.id]
-    });
-
-    // Resetar fluxo
-    context.currentFlow = undefined;
-    context.flowStep = undefined;
-    context.tempData = {};
-
-    // Gerar voucher formatado
-    const voucherMessage = formatVoucher({
-      voucherCode,
-      clienteNome: context.nome!,
-      passeioNome: passeioSelecionado.nome,
-      data: dataPasseio || 'A confirmar',
-      horario: '09:00',
-      numPessoas: numPessoas || 1,
-      valorTotal,
-      pontoEncontro: 'Cais da Praia dos Anjos - Arraial do Cabo'
-    });
-
-    return voucherMessage;
-
-  } catch (error) {
-    console.error('❌ Erro ao criar reserva final:', error);
-    context.currentFlow = undefined;
-    context.tempData = {};
-    return 'Ops, deu erro ao finalizar 😔\nLiga pra gente: (22) 99824-9911';
-  }
-}
-
-function normalizeString(value?: string): string {
-  if (!value) return '';
-  return value
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-const OPTION_KEYWORDS: Record<string, number> = {
-  'primeiro': 0,
-  'primeira': 0,
-  'opcao 1': 0,
-  'opção 1': 0,
-  'numero 1': 0,
-  'número 1': 0,
-  'um': 0,
-  'uma': 0,
-  'segundo': 1,
-  'segunda': 1,
-  'opcao 2': 1,
-  'opção 2': 1,
-  'numero 2': 1,
-  'número 2': 1,
-  'dois': 1,
-  'duas': 1,
-  'terceiro': 2,
-  'terceira': 2,
-  'opcao 3': 2,
-  'opção 3': 2,
-  'numero 3': 2,
-  'número 3': 2,
-  'tres': 2,
-  'três': 2
-};
-
-function detectOptionSelection(message: string): number | null {
-  if (!message) return null;
-
-  const numericMatch = message.match(/\b([1-9])\b/);
-  if (numericMatch) {
-    const idx = parseInt(numericMatch[1], 10) - 1;
-    if (idx >= 0) {
-      return idx;
-    }
-  }
-
-  for (const [keyword, index] of Object.entries(OPTION_KEYWORDS)) {
-    if (message.includes(keyword)) {
-      return index;
-    }
-  }
-
-  return null;
-}
+// Funções antigas removidas - IA gerencia tudo via tools
 
 function ensureMemoryContainer(context: ConversationContext) {
   if (!context.metadata) {
