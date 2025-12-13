@@ -5,6 +5,7 @@ import {
   getAllPasseios,
   createReserva,
   createCobranca,
+  getPendingCobrancaByReservaId,
   generateVoucherCode,
   ConversationContext,
   MemoryEntry 
@@ -33,10 +34,36 @@ export async function processMessage(telefone: string, message: string): Promise
       await notifyBusiness({ type: 'RECLAMACAO', data: { telefone, nome: context.nome, mensagem: message } });
     }
 
-    if ((analysis.intent === 'pagamento' || analysis.intent === 'pix' || analysis.intent === 'boleto') && context.tempData?.reservaId && context.tempData?.valorTotal) {
-      const formaPagamento = analysis.entities.formaPagamento || (message.toLowerCase().includes('boleto') ? 'boleto' : 'pix');
-      const response = await gerarCobranca(telefone, context, formaPagamento);
+    if (analysis.intent === 'pagamento' || analysis.intent === 'pix' || analysis.intent === 'boleto') {
+      if (context.tempData?.reservaId && !context.tempData?.valorTotal) {
+        const response = 'Perfeito! Sua reserva já está registrada ✅\nSó falta eu confirmar o valor certinho (ele pode variar conforme o passeio) e já te envio o PIX/boleto aqui.\n\nSe preferir agilizar, chama no (22) 99824-9911.';
+        context.conversationHistory.push({ role: 'user', content: message }, { role: 'assistant', content: response });
+        context.lastMessage = message;
+        context.lastIntent = analysis.intent;
+        context.lastMessageTime = new Date().toISOString();
+        await saveConversationContext(context);
+        console.log(`✅ Respondido em ${Date.now() - startTime}ms`);
+        return response;
+      }
+
+      if (context.tempData?.reservaId && context.tempData?.valorTotal) {
+        const formaPagamento = analysis.entities.formaPagamento || (message.toLowerCase().includes('boleto') ? 'boleto' : 'pix');
+        const response = await gerarCobranca(telefone, context, formaPagamento);
+        context.conversationHistory.push({ role: 'user', content: message }, { role: 'assistant', content: response });
+        context.lastMessage = message;
+        context.lastIntent = analysis.intent;
+        context.lastMessageTime = new Date().toISOString();
+        await saveConversationContext(context);
+        console.log(`✅ Respondido em ${Date.now() - startTime}ms`);
+        return response;
+      }
+    }
+
+    if (context.currentFlow === 'reserva') {
+      const response = await handleReservaFlow(telefone, message, context, analysis);
+      captureMemoriesFromInteraction(context, analysis, message);
       context.conversationHistory.push({ role: 'user', content: message }, { role: 'assistant', content: response });
+      if (context.conversationHistory.length > 20) context.conversationHistory = context.conversationHistory.slice(-20);
       context.lastMessage = message;
       context.lastIntent = analysis.intent;
       context.lastMessageTime = new Date().toISOString();
@@ -45,8 +72,8 @@ export async function processMessage(telefone: string, message: string): Promise
       return response;
     }
 
-    if (context.currentFlow === 'reserva') {
-      const response = await handleReservaFlow(telefone, message, context, analysis);
+    if (analysis.intent === 'preco' && analysis.confidence > 0.55) {
+      const response = await handlePrecoRequest(message, context, analysis);
       captureMemoriesFromInteraction(context, analysis, message);
       context.conversationHistory.push({ role: 'user', content: message }, { role: 'assistant', content: response });
       if (context.conversationHistory.length > 20) context.conversationHistory = context.conversationHistory.slice(-20);
@@ -136,6 +163,54 @@ async function handleReservaFlow(telefone: string, message: string, context: Con
   return await criarReservaECobrar(telefone, context);
 }
 
+async function handlePrecoRequest(message: string, context: ConversationContext, analysis: any): Promise<string> {
+  const passeios = await getAllPasseios();
+  if (!passeios.length) {
+    return 'No momento eu não consegui acessar a tabela de passeios 😔\nPode chamar no (22) 99824-9911 enquanto eu verifico.';
+  }
+
+  const rawQuery = analysis?.entities?.passeio || context.tempData?.passeio || message;
+  const query = normalizeString(rawQuery);
+
+  const formatFaixa = (p: any) => {
+    if (p.preco_min != null && p.preco_max != null) {
+      return p.preco_min === p.preco_max ? `R$ ${p.preco_min}` : `R$ ${p.preco_min} - R$ ${p.preco_max}`;
+    }
+    if (p.preco_min != null) return `R$ ${p.preco_min}`;
+    if (p.preco_max != null) return `R$ ${p.preco_max}`;
+    return 'Consulte';
+  };
+
+  let matches: any[] = [];
+  if (query && query.length >= 3) {
+    matches = passeios.filter(p => {
+      const nome = normalizeString(p.nome);
+      const categoria = normalizeString(p.categoria || '');
+      return nome.includes(query) || categoria.includes(query);
+    });
+  }
+
+  if (!matches.length) {
+    const top5 = passeios.slice(0, 5);
+    const lista = top5
+      .map((p, i) => `${i + 1}. ${p.nome.split('-')[0].trim()} (${formatFaixa(p)})`)
+      .join('\n');
+    return `Me diz qual passeio você quer o valor 😊\n\n${lista}\n\nResponde com o número ou o nome.`;
+  }
+
+  const top = matches.slice(0, 3);
+  if (top.length > 1) {
+    const lista = top
+      .map((p, i) => `${i + 1}. ${p.nome.split('-')[0].trim()} (${formatFaixa(p)})`)
+      .join('\n');
+    return `Achei essas opções 👇\n\n${lista}\n\nQual delas é? (1, 2 ou 3)`;
+  }
+
+  const passeio = top[0];
+  const faixa = formatFaixa(passeio);
+  return `O valor do *${passeio.nome.split('-')[0].trim()}* é *${faixa}* 😊\n\nPra eu te passar certinho e já reservar: qual data você quer e quantas pessoas vão?`;
+}
+
 async function criarReservaECobrar(telefone: string, context: ConversationContext): Promise<string> {
   try {
     const passeios = await getAllPasseios();
@@ -154,20 +229,42 @@ async function criarReservaECobrar(telefone: string, context: ConversationContex
     const cliente = await getOrCreateCliente(telefone, context.nome);
     if (!cliente) return 'Ops, erro ao criar seu cadastro 😔\nLiga: (22) 99824-9911';
 
-    const valorPorPessoa = (passeioSelecionado.preco_min != null && passeioSelecionado.preco_max != null)
-      ? Math.round((passeioSelecionado.preco_min + passeioSelecionado.preco_max) / 2)
-      : (passeioSelecionado.preco_min != null)
-        ? passeioSelecionado.preco_min
-        : (passeioSelecionado.preco_max != null)
-          ? passeioSelecionado.preco_max
-          : null;
+    const precoMin = passeioSelecionado.preco_min;
+    const precoMax = passeioSelecionado.preco_max;
 
-    if (valorPorPessoa == null) {
+    if (precoMin == null && precoMax == null) {
       context.currentFlow = undefined;
       return 'No momento eu não tenho o valor desse passeio cadastrado na tabela 😔\nVou confirmar com a equipe e já te retorno.\n\nSe preferir, chama no (22) 99824-9911.';
     }
+
     const numPessoas = context.tempData!.numPessoas!;
     const dataPasseio = context.tempData!.data!;
+
+    const hasFaixa = precoMin != null && precoMax != null && precoMin !== precoMax;
+
+    if (hasFaixa && precoMin != null && precoMax != null) {
+      const valorTotalEstimado = precoMin * numPessoas;
+      const reserva = await createReserva({
+        cliente_id: cliente.id,
+        passeio_id: passeioSelecionado.id,
+        data_passeio: dataPasseio,
+        num_pessoas: numPessoas,
+        voucher: 'AGUARDANDO_PAGAMENTO',
+        status: 'PENDENTE',
+        valor_total: valorTotalEstimado,
+        observacoes: `Reserva via WhatsApp | Faixa de preço: R$ ${precoMin}-${precoMax}`
+      });
+
+      if (!reserva) return 'Erro ao criar reserva 😔\nLiga: (22) 99824-9911';
+
+      context.tempData!.reservaId = reserva.id;
+      context.tempData!.passeioNome = passeioSelecionado.nome;
+
+      const primeiroNome = context.nome?.split(' ')[0] || 'cliente';
+      return `Perfeito, ${primeiroNome}! 🎉\n\n📋 *Resumo da Reserva:*\n🚤 ${passeioSelecionado.nome}\n📅 ${dataPasseio}\n👥 ${numPessoas} pessoa(s)\n💰 *Valor por pessoa:* R$ ${precoMin} a R$ ${precoMax}\n\nPra eu te mandar o PIX/boleto, preciso confirmar o valor exato dentro dessa faixa.\nJá vou confirmar com a equipe e te envio aqui ✅`;
+    }
+
+    const valorPorPessoa = precoMin != null ? precoMin : precoMax!;
     const valorTotal = valorPorPessoa * numPessoas;
 
     const reserva = await createReserva({
@@ -200,22 +297,38 @@ async function criarReservaECobrar(telefone: string, context: ConversationContex
 async function gerarCobranca(telefone: string, context: ConversationContext, tipo: 'pix' | 'boleto'): Promise<string> {
   try {
     const { reservaId, valorTotal, passeioNome } = context.tempData || {};
-    if (!reservaId || !valorTotal) return 'Não encontrei sua reserva pendente 🤔\nQuer fazer uma nova? Me diz "quero reservar"';
+    if (!reservaId) return 'Não encontrei sua reserva pendente 🤔\nQuer fazer uma nova? Me diz "quero reservar"';
+    if (!valorTotal) return 'Sua reserva está registrada ✅\nMas eu preciso confirmar o valor exato antes de gerar PIX/boleto.\n\nJá vou confirmar com a equipe e te envio aqui.';
 
     const cliente = await getOrCreateCliente(telefone, context.nome);
     if (!cliente) return 'Erro ao acessar seus dados 😔\nLiga: (22) 99824-9911';
+
+    const tipoDb = tipo === 'pix' ? 'PIX' : 'BOLETO';
+    const cobrancaExistente = await getPendingCobrancaByReservaId(reservaId, tipoDb);
+
+    if (cobrancaExistente) {
+      if (tipoDb === 'PIX' && cobrancaExistente.pix_copiacola) {
+        return `💳 *PAGAMENTO VIA PIX*\n\n💰 Valor: R$ ${cobrancaExistente.valor.toFixed(2)}\n\n📱 *Copie o código abaixo:*\n\`\`\`\n${cobrancaExistente.pix_copiacola}\n\`\`\`\n\n✅ Após o pagamento, você receberá seu voucher automaticamente!\n\n📞 Dúvidas: (22) 99824-9911`;
+      }
+
+      if (tipoDb === 'BOLETO' && cobrancaExistente.boleto_url) {
+        return `💳 *PAGAMENTO VIA BOLETO*\n\n💰 Valor: R$ ${cobrancaExistente.valor.toFixed(2)}\n\n🔗 *Link do boleto:*\n${cobrancaExistente.boleto_url}\n\n✅ Após o pagamento, você receberá seu voucher automaticamente.\n\n📞 Dúvidas: (22) 99824-9911`;
+      }
+    }
 
     const asaasCustomer = await findOrCreateCustomer({ name: context.nome || 'Cliente', phone: telefone.replace(/\D/g, ''), email: cliente.email || undefined });
 
     if (tipo === 'pix') {
       const { payment, pixQrCode } = await createPixPayment({ customerId: asaasCustomer.id, value: valorTotal, description: `${passeioNome || 'Passeio'} - ${context.tempData?.data}`, externalReference: reservaId });
-      await createCobranca({ reserva_id: reservaId, cliente_id: cliente.id, asaas_id: payment.id, tipo: 'PIX', valor: valorTotal, status: 'PENDENTE', pix_qrcode: pixQrCode.encodedImage, pix_copiacola: pixQrCode.payload, vencimento: pixQrCode.expirationDate });
+      const saved = await createCobranca({ reserva_id: reservaId, cliente_id: cliente.id, asaas_id: payment.id, tipo: 'PIX', valor: valorTotal, status: 'PENDENTE', pix_qrcode: pixQrCode.encodedImage, pix_copiacola: pixQrCode.payload, vencimento: pixQrCode.expirationDate });
+      if (!saved) return 'Ops, tive um erro ao registrar sua cobrança 😔\nPode tentar novamente ou chama no (22) 99824-9911.';
       context.currentFlow = undefined;
       context.flowStep = undefined;
       return formatPixMessage(pixQrCode, valorTotal);
     } else {
       const payment = await createBoletoPayment({ customerId: asaasCustomer.id, value: valorTotal, description: `${passeioNome || 'Passeio'} - ${context.tempData?.data}`, externalReference: reservaId });
-      await createCobranca({ reserva_id: reservaId, cliente_id: cliente.id, asaas_id: payment.id, tipo: 'BOLETO', valor: valorTotal, status: 'PENDENTE', boleto_url: payment.bankSlipUrl, vencimento: payment.dueDate });
+      const saved = await createCobranca({ reserva_id: reservaId, cliente_id: cliente.id, asaas_id: payment.id, tipo: 'BOLETO', valor: valorTotal, status: 'PENDENTE', boleto_url: payment.bankSlipUrl, vencimento: payment.dueDate });
+      if (!saved) return 'Ops, tive um erro ao registrar seu boleto 😔\nPode tentar novamente ou chama no (22) 99824-9911.';
       context.currentFlow = undefined;
       context.flowStep = undefined;
       return formatBoletoMessage(payment, valorTotal);

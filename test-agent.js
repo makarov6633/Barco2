@@ -27,7 +27,7 @@ let allGood = true;
 checks.forEach(check => {
   const value = process.env[check.key];
   const status = value ? '✅' : '❌';
-  const display = value ? `${value.substring(0, 20)}...` : 'NÃO CONFIGURADO';
+  const display = value ? 'CONFIGURADO' : 'NÃO CONFIGURADO';
   console.log(`${status} ${check.name}: ${display}`);
   if (!value) allGood = false;
 });

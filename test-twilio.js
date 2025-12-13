@@ -6,8 +6,8 @@ const authToken = process.env.TWILIO_AUTH_TOKEN;
 const from = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886';
 
 console.log('\n🔍 TESTANDO TWILIO\n');
-console.log('AccountSid:', accountSid ? `${accountSid.substring(0, 10)}...` : '❌ NÃO CONFIGURADO');
-console.log('AuthToken:', authToken ? `${authToken.substring(0, 10)}...` : '❌ NÃO CONFIGURADO');
+console.log('AccountSid:', accountSid ? '✅ CONFIGURADO' : '❌ NÃO CONFIGURADO');
+console.log('AuthToken:', authToken ? '✅ CONFIGURADO' : '❌ NÃO CONFIGURADO');
 console.log('From:', from);
 console.log('\n---\n');
 

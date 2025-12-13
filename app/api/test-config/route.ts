@@ -6,10 +6,13 @@ export async function GET(req: NextRequest) {
     environment: process.env.NODE_ENV,
     checks: {
       asaas: {
-        configured: !!process.env.ASAAS_API_KEY
+        apiKeyConfigured: !!process.env.ASAAS_API_KEY,
+        webhookTokenConfigured: !!process.env.ASAAS_WEBHOOK_TOKEN
       },
       groq: {
-        configured: !!process.env.GROQ_API_KEY
+        apiKeyConfigured: !!process.env.GROQ_API_KEY,
+        reasoningModel: process.env.GROQ_REASONING_MODEL || 'openai/gpt-oss-120b',
+        intentModel: process.env.GROQ_INTENT_MODEL || 'openai/gpt-oss-120b'
       },
       twilio: {
         accountSid: {
@@ -36,8 +39,8 @@ export async function GET(req: NextRequest) {
   };
 
   const allConfigured = 
-    checks.checks.asaas.configured &&
-    checks.checks.groq.configured &&
+    checks.checks.asaas.apiKeyConfigured &&
+    checks.checks.groq.apiKeyConfigured &&
     checks.checks.twilio.accountSid.configured &&
     checks.checks.twilio.authToken.configured &&
     checks.checks.twilio.from.configured &&
@@ -45,8 +48,8 @@ export async function GET(req: NextRequest) {
     checks.checks.supabase.serviceKey.configured;
 
   const missing = [];
-  if (!checks.checks.asaas.configured) missing.push('ASAAS_API_KEY');
-  if (!checks.checks.groq.configured) missing.push('GROQ_API_KEY');
+  if (!checks.checks.asaas.apiKeyConfigured) missing.push('ASAAS_API_KEY');
+  if (!checks.checks.groq.apiKeyConfigured) missing.push('GROQ_API_KEY');
   if (!checks.checks.twilio.accountSid.configured) missing.push('TWILIO_ACCOUNT_SID');
   if (!checks.checks.twilio.authToken.configured) missing.push('TWILIO_AUTH_TOKEN');
   if (!checks.checks.twilio.from.configured) missing.push('TWILIO_WHATSAPP_FROM');

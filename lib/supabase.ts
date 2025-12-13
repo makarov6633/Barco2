@@ -43,7 +43,7 @@ export interface Reserva {
   data_passeio: string;
   num_pessoas: number;
   voucher: string;
-  status: 'PENDENTE' | 'CONFIRMADO' | 'CANCELADO';
+  status: 'PENDENTE' | 'CONFIRMADO' | 'CANCELADO' | 'EXPIRADO';
   valor_total: number;
   observacoes?: string;
   created_at?: string;
@@ -319,7 +319,28 @@ export async function getCobrancaByAsaasId(asaasId: string): Promise<Cobranca | 
     const supabase = getSupabase();
     const { data } = await supabase.from('cobrancas').select('*').eq('asaas_id', asaasId).single();
     return data;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
+}
+
+export async function getPendingCobrancaByReservaId(reservaId: string, tipo: Cobranca['tipo']): Promise<Cobranca | null> {
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase
+      .from('cobrancas')
+      .select('*')
+      .eq('reserva_id', reservaId)
+      .eq('tipo', tipo)
+      .eq('status', 'PENDENTE')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    if (error) return null;
+    return data;
+  } catch {
+    return null;
+  }
 }
 
 export async function getReservaById(reservaId: string): Promise<Reserva | null> {
