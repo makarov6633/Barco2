@@ -457,23 +457,12 @@ export default function Home() {
                   
                   <div className="flex justify-center pt-8 pb-4">
                     <div className="relative w-56 h-56 md:w-64 md:h-64 rounded-full overflow-hidden ring-8 ring-white/30 shadow-2xl">
-                      {tour.imageFit === 'contain' && (
-                        <Image
-                          src={tour.image}
-                          alt=""
-                          aria-hidden
-                          fill
-                          sizes="(max-width: 768px) 224px, 256px"
-                          className="object-cover scale-125 blur-2xl opacity-70"
-                          quality={100}
-                        />
-                      )}
                       <Image
                         src={tour.image}
                         alt={tour.title}
                         fill
                         sizes="(max-width: 768px) 224px, 256px"
-                        className={`${tour.imageFit === 'contain' ? 'object-contain' : 'object-cover'} transition-transform duration-700 group-hover:scale-110`}
+                        className="object-cover transition-transform duration-700 group-hover:scale-110"
                         quality={100}
                         priority={idx < 3}
                       />
