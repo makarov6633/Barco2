@@ -117,9 +117,13 @@ img {
 }
 
 .ctc-aurora-border {
-  background: linear-gradient(90deg, rgba(37,211,102,0.55), rgba(255,215,0,0.45), rgba(27,168,184,0.7), rgba(13,138,153,0.7));
+  background: linear-gradient(90deg, rgba(37,211,102,0.65), rgba(255,215,0,0.55), rgba(27,168,184,0.78), rgba(13,138,153,0.78));
   background-size: 300% 300%;
   animation: ctcAurora 8s ease-in-out infinite;
+}
+
+.ctc-aurora-glow {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 24px 70px rgba(13, 138, 153, 0.18);
 }
 
 @keyframes ctcSheen {
