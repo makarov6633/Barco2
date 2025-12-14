@@ -521,7 +521,10 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
           status: 'PENDENTE',
           pix_qrcode: pixQrCode.encodedImage,
           pix_copiacola: pixQrCode.payload,
-          vencimento: pixQrCode.expirationDate
+          vencimento:
+            pixQrCode.expirationDate ||
+            payment.dueDate ||
+            new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
         });
 
         if (!saved?.id) {
@@ -538,7 +541,10 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
             valor: valor,
             pix: {
               copia_cola: pixQrCode.payload,
-              expiracao: pixQrCode.expirationDate
+              expiracao:
+                pixQrCode.expirationDate ||
+                payment.dueDate ||
+                new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
             }
           }
         };
@@ -559,7 +565,9 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
         valor: valor,
         status: 'PENDENTE',
         boleto_url: payment.bankSlipUrl,
-        vencimento: payment.dueDate
+        vencimento:
+          payment.dueDate ||
+          new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
       });
 
       if (!saved?.id) {
@@ -576,7 +584,9 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
           valor: valor,
           boleto: {
             url: payment.bankSlipUrl,
-            vencimento: payment.dueDate
+            vencimento:
+              payment.dueDate ||
+              new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
           }
         }
       };
