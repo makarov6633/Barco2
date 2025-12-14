@@ -24,10 +24,10 @@ async function fetchJson(endpoint) {
 }
 
 (async () => {
-  const contexts = await fetchJson('/rest/v1/conversation_contexts?select=telefone,metadata&limit=3');
+  const contexts = await fetchJson('/rest/v1/conversation_contexts?select=telefone,context&limit=3');
   const reservas = await fetchJson('/rest/v1/reservas?select=*,clientes(nome,telefone)&limit=1');
 
-  console.log('\nSample conversation contexts (metadata column present):\n');
+  console.log('\nSample conversation contexts:\n');
   contexts.forEach(entry => {
     console.log(JSON.stringify(entry, null, 2));
   });

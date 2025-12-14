@@ -2,6 +2,92 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 let cachedSupabase: SupabaseClient | null = null;
 
+type ConversationContextStorageMode = 'unknown' | 'json' | 'columns';
+let cachedConversationContextStorageMode: ConversationContextStorageMode = 'unknown';
+
+function normalizeConversationHistory(raw: any): Array<{ role: string; content: string }> {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry) => ({
+      role: typeof entry?.role === 'string' ? entry.role : 'user',
+      content: typeof entry?.content === 'string' ? entry.content : ''
+    }))
+    .filter((entry) => entry.content);
+}
+
+function normalizeMetadata(raw: any): ConversationMetadata {
+  const metadata: ConversationMetadata = raw && typeof raw === 'object' ? raw : {};
+  if (!Array.isArray(metadata.memories)) {
+    metadata.memories = [];
+  }
+  return metadata;
+}
+
+function normalizeTempData(raw: any): ConversationContext['tempData'] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return {};
+  }
+  return raw;
+}
+
+async function getConversationContextStorageMode(
+  supabase: SupabaseClient
+): Promise<Exclude<ConversationContextStorageMode, 'unknown'>> {
+  if (cachedConversationContextStorageMode !== 'unknown') {
+    return cachedConversationContextStorageMode;
+  }
+
+  const { error } = await supabase.from('conversation_contexts').select('context').limit(1);
+  if (!error) {
+    cachedConversationContextStorageMode = 'json';
+    return cachedConversationContextStorageMode;
+  }
+
+  const msg = `${(error as any)?.message || ''}`.toLowerCase();
+  if (msg.includes('context') && msg.includes('column')) {
+    cachedConversationContextStorageMode = 'columns';
+    return cachedConversationContextStorageMode;
+  }
+
+  cachedConversationContextStorageMode = 'columns';
+  return cachedConversationContextStorageMode;
+}
+
+function mapRowToConversationContext(row: any, telefoneFallback: string): ConversationContext {
+  const telefone = typeof row?.telefone === 'string' ? row.telefone : telefoneFallback;
+
+  const stored = row?.context && typeof row.context === 'object' ? row.context : null;
+  if (stored) {
+    const metadata = normalizeMetadata(stored.metadata ?? row.metadata);
+    return {
+      telefone,
+      nome: stored.nome ?? row.nome,
+      conversationHistory: normalizeConversationHistory(stored.conversationHistory ?? stored.conversation_history),
+      currentFlow: stored.currentFlow ?? stored.current_flow,
+      flowStep: stored.flowStep ?? stored.flow_step,
+      tempData: normalizeTempData(stored.tempData ?? stored.temp_data),
+      lastIntent: stored.lastIntent ?? stored.last_intent,
+      lastMessage: stored.lastMessage ?? stored.last_message,
+      lastMessageTime: stored.lastMessageTime ?? stored.last_message_time,
+      metadata
+    };
+  }
+
+  const metadata = normalizeMetadata(row?.metadata);
+  return {
+    telefone,
+    nome: row?.nome,
+    conversationHistory: normalizeConversationHistory(row?.conversation_history),
+    currentFlow: row?.current_flow,
+    flowStep: row?.flow_step,
+    tempData: normalizeTempData(row?.temp_data),
+    lastIntent: row?.last_intent,
+    lastMessage: row?.last_message,
+    lastMessageTime: row?.last_message_time,
+    metadata
+  };
+}
+
 function getSupabase() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -59,6 +145,7 @@ export interface MemoryEntry {
 
 export interface ConversationMetadata {
   memories?: MemoryEntry[];
+  asaasCustomerId?: string;
   [key: string]: any;
 }
 
@@ -75,6 +162,12 @@ export interface ConversationContext {
     numPessoas?: number;
     cpf?: string;
     email?: string;
+    paymentMethod?: 'pix' | 'boleto';
+    paymentId?: string;
+    paymentInvoiceUrl?: string;
+    paymentPixPayload?: string;
+    paymentBankSlipUrl?: string;
+    paymentDueDate?: string;
     optionList?: string[];
     optionIds?: string[];
   };
@@ -124,7 +217,7 @@ export async function getAllPasseios(): Promise<Passeio[]> {
 
     const { data, error } = await supabase
       .from('passeios')
-      .select('*')
+      .select('id,nome,categoria,preco_min,preco_max,duracao,local')
       .order('nome');
 
     return data || [];
@@ -152,6 +245,13 @@ export async function createReserva(reserva: Omit<Reserva, 'id' | 'created_at'>)
 }
 
 export async function getConversationContext(telefone: string): Promise<ConversationContext> {
+  const fallback: ConversationContext = {
+    telefone,
+    conversationHistory: [],
+    tempData: {},
+    metadata: { memories: [] }
+  };
+
   try {
     const supabase = getSupabase();
 
@@ -159,41 +259,16 @@ export async function getConversationContext(telefone: string): Promise<Conversa
       .from('conversation_contexts')
       .select('*')
       .eq('telefone', telefone)
-      .single();
+      .limit(1)
+      .maybeSingle();
 
-    if (data) {
-      const metadata: ConversationMetadata = data.metadata || {};
-      if (!Array.isArray(metadata.memories)) {
-        metadata.memories = [];
-      }
-
-      return {
-        telefone: data.telefone,
-        nome: data.nome,
-        conversationHistory: data.conversation_history || [],
-        currentFlow: data.current_flow,
-        flowStep: data.flow_step,
-        tempData: data.temp_data || {},
-        lastIntent: data.last_intent,
-        lastMessage: data.last_message,
-        lastMessageTime: data.last_message_time,
-        metadata
-      };
+    if (error || !data) {
+      return fallback;
     }
 
-    return {
-      telefone,
-      conversationHistory: [],
-      tempData: {},
-      metadata: { memories: [] }
-    };
-  } catch (error) {
-    return {
-      telefone,
-      conversationHistory: [],
-      tempData: {},
-      metadata: { memories: [] }
-    };
+    return mapRowToConversationContext(data, telefone);
+  } catch {
+    return fallback;
   }
 }
 
@@ -201,36 +276,90 @@ export async function saveConversationContext(context: ConversationContext): Pro
   try {
     const supabase = getSupabase();
 
-    const { data: existing } = await supabase
-      .from('conversation_contexts')
-      .select('telefone')
-      .eq('telefone', context.telefone)
-      .single();
+    const metadata = normalizeMetadata(context.metadata);
 
-    const metadata: ConversationMetadata = context.metadata || {};
-    if (!Array.isArray(metadata.memories)) {
-      metadata.memories = [];
-    }
-    context.metadata = metadata;
-
-    const payload = {
-      telefone: context.telefone,
-      nome: context.nome,
-      conversation_history: context.conversationHistory,
-      current_flow: context.currentFlow,
-      flow_step: context.flowStep,
-      temp_data: context.tempData,
-      last_intent: context.lastIntent,
-      last_message: context.lastMessage,
-      last_message_time: context.lastMessageTime || new Date().toISOString(),
+    const safeContext: ConversationContext = {
+      ...context,
+      conversationHistory: normalizeConversationHistory(context.conversationHistory),
+      tempData: normalizeTempData(context.tempData),
+      lastMessageTime: context.lastMessageTime || new Date().toISOString(),
       metadata
     };
 
-    if (existing) {
+    const mode = await getConversationContextStorageMode(supabase);
+
+    const { data: existing } = await supabase
+      .from('conversation_contexts')
+      .select('id')
+      .eq('telefone', safeContext.telefone)
+      .limit(1)
+      .maybeSingle();
+
+    if (mode === 'json') {
+      const minimalPayload: any = {
+        telefone: safeContext.telefone,
+        context: safeContext
+      };
+
+      const extendedPayload: any = {
+        ...minimalPayload,
+        last_message: safeContext.lastMessage,
+        last_intent: safeContext.lastIntent,
+        last_updated: safeContext.lastMessageTime,
+        metadata: safeContext.metadata
+      };
+
+      if (existing?.id) {
+        const { error } = await supabase
+          .from('conversation_contexts')
+          .update(extendedPayload)
+          .eq('id', existing.id);
+
+        if (error) {
+          const msg = `${(error as any)?.message || ''}`.toLowerCase();
+          if (msg.includes('column')) {
+            await supabase
+              .from('conversation_contexts')
+              .update(minimalPayload)
+              .eq('id', existing.id);
+          }
+        }
+      } else {
+        const { error } = await supabase
+          .from('conversation_contexts')
+          .insert(extendedPayload);
+
+        if (error) {
+          const msg = `${(error as any)?.message || ''}`.toLowerCase();
+          if (msg.includes('column')) {
+            await supabase
+              .from('conversation_contexts')
+              .insert(minimalPayload);
+          }
+        }
+      }
+
+      return;
+    }
+
+    const payload: any = {
+      telefone: safeContext.telefone,
+      nome: safeContext.nome,
+      conversation_history: safeContext.conversationHistory,
+      current_flow: safeContext.currentFlow,
+      flow_step: safeContext.flowStep,
+      temp_data: safeContext.tempData,
+      last_intent: safeContext.lastIntent,
+      last_message: safeContext.lastMessage,
+      last_message_time: safeContext.lastMessageTime,
+      metadata: safeContext.metadata
+    };
+
+    if (existing?.id) {
       await supabase
         .from('conversation_contexts')
         .update(payload)
-        .eq('telefone', context.telefone);
+        .eq('id', existing.id);
     } else {
       await supabase
         .from('conversation_contexts')
