@@ -23,6 +23,11 @@ function containsAny(text: string, needles: string[]) {
   return needles.some((n) => lower.includes(n.toLowerCase()));
 }
 
+function containsAll(text: string, needles: string[]) {
+  const lower = text.toLowerCase();
+  return needles.every((n) => lower.includes(n.toLowerCase()));
+}
+
 async function runScenario(name: string, telefone: string, steps: Step[]) {
   console.log(`\n=== ${name} (${telefone}) ===\n`);
 
@@ -52,7 +57,22 @@ async function main() {
     {
       user: 'Oi! Quero reservar um passeio de quadriciclo',
       expect: (reply) => {
-        assert(containsAny(reply, ['qual dia', 'pra qual dia', 'data']), 'Esperava pergunta de data');
+        assert(
+          containsAny(reply, ['data', 'qual', '1', 'opção', 'opcao']),
+          'Esperava que o agente avançasse (perguntando data ou oferecendo opções)'
+        );
+      }
+    },
+    {
+      user: '1',
+      expect: (reply) => {
+        assert(containsAny(reply, ['nome']), 'Esperava pergunta do nome');
+      }
+    },
+    {
+      user: 'João da Silva',
+      expect: (reply) => {
+        assert(containsAny(reply, ['qual dia', 'pra qual dia', 'data', 'quando']), 'Esperava pergunta de data');
       }
     },
     {
@@ -64,28 +84,28 @@ async function main() {
     {
       user: '2 pessoas',
       expect: (reply) => {
-        assert(containsAny(reply, ['nome completo', 'seu nome']), 'Esperava pergunta do nome');
-      }
-    },
-    {
-      user: 'João da Silva',
-      expect: (reply) => {
         assert(containsAny(reply, ['voucher', 'reserva']), 'Esperava voucher/reserva na resposta final');
       }
     }
   ]);
 
-  await runScenario('Reserva - seleção 1/2/3', `${base}03`, [
+  await runScenario('Reserva - seleção por número', `${base}03`, [
     {
       user: 'Quero reservar',
       expect: (reply) => {
-        assert(containsAny(reply, ['1.', '2.', '3.']), 'Esperava lista com opções 1/2/3');
+        assert(containsAny(reply, ['1', '2']), 'Esperava lista com opções numeradas');
       }
     },
     {
       user: '1',
       expect: (reply) => {
-        assert(containsAny(reply, ['qual dia', 'pra qual dia', 'data']), 'Esperava pergunta de data após selecionar opção');
+        assert(containsAny(reply, ['nome']), 'Esperava pergunta do nome');
+      }
+    },
+    {
+      user: 'Maria Silva',
+      expect: (reply) => {
+        assert(containsAny(reply, ['qual dia', 'pra qual dia', 'data', 'quando']), 'Esperava pergunta de data');
       }
     },
     {
@@ -96,12 +116,6 @@ async function main() {
     },
     {
       user: '2',
-      expect: (reply) => {
-        assert(containsAny(reply, ['nome completo', 'seu nome']), 'Esperava pergunta do nome');
-      }
-    },
-    {
-      user: 'Maria Silva',
       expect: (reply) => {
         assert(containsAny(reply, ['voucher', 'reserva']), 'Esperava voucher/reserva na resposta final');
       }

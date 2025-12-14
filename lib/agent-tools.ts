@@ -8,7 +8,9 @@ import {
   getOrCreateCliente,
   getPasseioById,
   getPendingCobrancaByReservaId,
-  getReservaById
+  getReservaById,
+  getReservaByVoucher,
+  updateReservaStatus
 } from './supabase';
 import {
   createBoletoPayment,
@@ -21,7 +23,8 @@ export type ToolName =
   | 'buscar_passeio_especifico'
   | 'criar_reserva'
   | 'gerar_pagamento'
-  | 'gerar_voucher';
+  | 'gerar_voucher'
+  | 'cancelar_reserva';
 
 export type ToolResult =
   | { success: true; data: any }
@@ -64,6 +67,11 @@ export function getToolsForPrompt() {
       name: 'gerar_voucher',
       description: 'Gera o texto do voucher para uma reserva confirmada.',
       params: { reserva_id: 'uuid' }
+    },
+    {
+      name: 'cancelar_reserva',
+      description: 'Cancela uma reserva por reserva_id ou voucher.',
+      params: { reserva_id: 'uuid (opcional)', voucher: 'string (opcional)', motivo: 'string (opcional)' }
     }
   ] as const;
 }
@@ -588,6 +596,57 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
               payment.dueDate ||
               new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
           }
+        }
+      };
+    }
+
+    if (name === 'cancelar_reserva') {
+      const reservaIdRaw = String(params?.reserva_id ?? params?.reservaId ?? '').trim();
+      const voucherRaw = String(params?.voucher ?? params?.voucher_code ?? params?.voucherCode ?? '').trim();
+
+      const missing = getMissing([['reserva_id|voucher', reservaIdRaw || voucherRaw]]);
+      if (missing.length) {
+        return { success: false, error: { code: 'missing_fields', message: 'Faltam dados para cancelar.', missing } };
+      }
+
+      const reserva = reservaIdRaw
+        ? await getReservaById(reservaIdRaw)
+        : await getReservaByVoucher(voucherRaw);
+
+      if (!reserva?.id) {
+        return {
+          success: false,
+          error: {
+            code: 'reserva_not_found',
+            message: 'Não encontrei essa reserva.',
+            details: { reserva_id: reservaIdRaw || undefined, voucher: voucherRaw || undefined }
+          }
+        };
+      }
+
+      if (reserva.status === 'CANCELADO') {
+        return {
+          success: true,
+          data: {
+            reserva_id: reserva.id,
+            status: 'CANCELADO',
+            voucher_code: reserva.voucher,
+            message: 'Reserva já estava cancelada.'
+          }
+        };
+      }
+
+      const ok = await updateReservaStatus(reserva.id, 'CANCELADO');
+      if (!ok) {
+        return { success: false, error: { code: 'cancel_failed', message: 'Não consegui cancelar agora. Tente novamente.' } };
+      }
+
+      return {
+        success: true,
+        data: {
+          reserva_id: reserva.id,
+          status: 'CANCELADO',
+          voucher_code: reserva.voucher
         }
       };
     }

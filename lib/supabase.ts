@@ -514,3 +514,16 @@ export async function getPasseioById(passeioId: string): Promise<Passeio | null>
     return null;
   }
 }
+
+export async function getReservaByVoucher(voucher: string): Promise<Reserva | null> {
+  const v = String(voucher || '').trim();
+  if (!v) return null;
+
+  try {
+    const supabase = getSupabase();
+    const { data } = await supabase.from('reservas').select('*').eq('voucher', v).single();
+    return (data as any) || null;
+  } catch {
+    return null;
+  }
+}
