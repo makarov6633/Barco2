@@ -60,11 +60,15 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ received: true, event, message: 'Reserva not found' });
       }
 
-      if (reserva.voucher && reserva.voucher !== 'AGUARDANDO_PAGAMENTO' && reserva.status === 'CONFIRMADO') {
+      const existingVoucher = reserva.voucher && reserva.voucher !== 'AGUARDANDO_PAGAMENTO'
+        ? reserva.voucher
+        : undefined;
+
+      if (existingVoucher && reserva.status === 'CONFIRMADO') {
         return NextResponse.json({ received: true, event, idempotent: true, message: 'Reserva already confirmed' });
       }
 
-      const voucherCode = generateVoucherCode();
+      const voucherCode = existingVoucher || generateVoucherCode();
       await updateReservaStatus(cobranca.reserva_id, 'CONFIRMADO', voucherCode);
 
       const [cliente, passeio] = await Promise.all([
@@ -80,7 +84,7 @@ export async function POST(req: NextRequest) {
           data: reserva.data_passeio,
           horario: '09:00',
           numPessoas: reserva.num_pessoas,
-          valorTotal: reserva.valor_total,
+          valorTotal: Number(reserva.valor_total),
           pontoEncontro: passeio?.local || 'Cais da Praia dos Anjos'
         });
 
@@ -100,7 +104,7 @@ export async function POST(req: NextRequest) {
           data: reserva.data_passeio,
           numPessoas: reserva.num_pessoas,
           voucher: voucherCode,
-          valor: reserva.valor_total,
+          valor: Number(reserva.valor_total),
           status: 'PAGO ✅'
         }
       });

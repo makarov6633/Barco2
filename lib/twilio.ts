@@ -1,13 +1,22 @@
 import twilio from 'twilio';
 
-const accountSid = process.env.TWILIO_ACCOUNT_SID;
-const authToken = process.env.TWILIO_AUTH_TOKEN;
-const client = twilio(accountSid, authToken);
+let cachedClient: ReturnType<typeof twilio> | null = null;
+
+function getTwilioClient() {
+  const accountSid = process.env.TWILIO_ACCOUNT_SID;
+  const authToken = process.env.TWILIO_AUTH_TOKEN;
+  if (!accountSid || !authToken) {
+    throw new Error('Twilio não configurado (TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN).');
+  }
+  cachedClient ||= twilio(accountSid, authToken);
+  return cachedClient;
+}
 
 export async function sendWhatsAppMessage(to: string, message: string): Promise<boolean> {
   try {
+    const client = getTwilioClient();
     const from = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886';
-    
+
     await client.messages.create({
       body: message,
       from,
@@ -34,36 +43,15 @@ export async function notifyBusiness(notification: {
 
     switch (notification.type) {
       case 'NOVA_RESERVA':
-        message = `🔔 *NOVA RESERVA*
-
-👤 ${notification.data.nome}
-📞 ${notification.data.telefone}
-🚤 ${notification.data.passeio}
-📅 ${notification.data.data}
-👥 ${notification.data.numPessoas} pessoa(s)
-💰 R$ ${notification.data.valor?.toFixed(2)}
-🎫 Voucher: ${notification.data.voucher}
-
-Status: *${notification.data.status}*`;
+        message = `🔔 *NOVA RESERVA*\n\n👤 ${notification.data.nome}\n📞 ${notification.data.telefone}\n🚤 ${notification.data.passeio}\n📅 ${notification.data.data}\n👥 ${notification.data.numPessoas} pessoa(s)\n💰 R$ ${notification.data.valor?.toFixed(2)}\n🎫 Voucher: ${notification.data.voucher}\n\nStatus: *${notification.data.status}*`;
         break;
 
       case 'RECLAMACAO':
-        message = `🚨 *RECLAMAÇÃO URGENTE*
-
-📞 ${notification.data.telefone}
-👤 ${notification.data.nome || 'Cliente'}
-
-💬 "${notification.data.mensagem}"
-
-⚠️ *ATENDER IMEDIATAMENTE!*`;
+        message = `🚨 *RECLAMAÇÃO URGENTE*\n\n📞 ${notification.data.telefone}\n👤 ${notification.data.nome || 'Cliente'}\n\n💬 "${notification.data.mensagem}"\n\n⚠️ *ATENDER IMEDIATAMENTE!*`;
         break;
 
       case 'CANCELAMENTO':
-        message = `❌ *CANCELAMENTO*
-
-📞 ${notification.data.telefone}
-🎫 Voucher: ${notification.data.voucher}
-💬 ${notification.data.motivo || 'Sem motivo informado'}`;
+        message = `❌ *CANCELAMENTO*\n\n📞 ${notification.data.telefone}\n🎫 Voucher: ${notification.data.voucher}\n💬 ${notification.data.motivo || 'Sem motivo informado'}`;
         break;
     }
 
@@ -83,25 +71,5 @@ export function formatVoucher(data: {
   valorTotal: number;
   pontoEncontro: string;
 }): string {
-  return `✅ *RESERVA CONFIRMADA!*
-
-🎫 *Voucher:* ${data.voucherCode}
-
-👤 ${data.clienteNome}
-🚤 ${data.passeioNome}
-📅 ${data.data} às ${data.horario}
-👥 ${data.numPessoas} pessoa(s)
-💰 R$ ${data.valorTotal.toFixed(2)}
-
-📍 *Ponto de Encontro:*
-${data.pontoEncontro}
-
-⚠️ *Importante:*
-• Chegar 15 min antes
-• Trazer este voucher
-• Confirmar 1 dia antes
-
-📞 Dúvidas: (22) 99824-9911
-
-_Caleb's Tour - CNPJ 26.096.072/0001-78_`;
+  return `✅ *RESERVA CONFIRMADA!*\n\n🎫 *Voucher:* ${data.voucherCode}\n\n👤 ${data.clienteNome}\n🚤 ${data.passeioNome}\n📅 ${data.data} às ${data.horario}\n👥 ${data.numPessoas} pessoa(s)\n💰 R$ ${data.valorTotal.toFixed(2)}\n\n📍 *Ponto de Encontro:*\n${data.pontoEncontro}\n\n⚠️ *Importante:*\n• Chegar 15 min antes\n• Trazer este voucher\n• Confirmar 1 dia antes\n\n📞 Dúvidas: (22) 99824-9911\n\n_Caleb's Tour - CNPJ 26.096.072/0001-78_`;
 }
