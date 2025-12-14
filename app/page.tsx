@@ -178,6 +178,7 @@ const tours = [
     title: 'City Tour Arraial do Cabo',
     subtitle: 'SAINDO DO RIO DE JANEIRO',
     image: '/passeio-city-tour-rio.jpeg',
+    imageFit: 'contain',
     description: 'Explore o deslumbrante Arraial do Cabo saindo do Rio de Janeiro com transporte e passeio de barco!',
     duration: 'Dia inteiro',
     difficulty: 'Conforto',
@@ -220,6 +221,7 @@ const tours = [
     title: 'UM DIA EM ARRAIAL DO CABO',
     subtitle: 'ARRAIAL DO CABO/RJ',
     image: '/passeio-um-dia-arraial.jpeg',
+    imageFit: 'contain',
     description: 'TRANSPORTE + PASSEIO DE BARCO + PASSEIO DE QUADRICICLO',
     duration: 'Dia inteiro',
     difficulty: 'Combo Completo',
@@ -234,6 +236,7 @@ const tours = [
     title: 'TRANSFER EXCLUSIVO',
     subtitle: 'REGIÃO DOS LAGOS/RJ',
     image: '/transfer-van-exclusivo.png',
+    imageFit: 'contain',
     description: 'Van Mercedes Sprinter com 06 passageiros, bancos de couro e ar condicionado.',
     duration: 'Flexível',
     difficulty: 'Conforto',
@@ -404,7 +407,7 @@ export default function Home() {
           loop
           muted
           playsInline
-          preload="auto"
+          preload="metadata"
           className="absolute inset-0 w-full h-full object-cover"
           style={{ objectFit: 'cover' }}
         >
@@ -441,7 +444,7 @@ export default function Home() {
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
-            {tours.map((tour) => (
+            {tours.map((tour, idx) => (
               <div key={tour.id} className="relative bg-gradient-to-br from-[#1BA8B8] to-[#0D8A99] rounded-3xl overflow-hidden shadow-xl hover:shadow-2xl transition-all duration-300 flex flex-col">
                 {tour.badge && (
                   <div className="absolute top-4 right-4 z-10">
@@ -452,14 +455,15 @@ export default function Home() {
                 )}
                 
                 <div className="flex justify-center pt-8 pb-4">
-                  <div className="relative w-56 h-56 md:w-64 md:h-64 rounded-full overflow-hidden ring-8 ring-white/30 shadow-2xl">
+                  <div className={`relative w-56 h-56 md:w-64 md:h-64 rounded-full overflow-hidden ring-8 ring-white/30 shadow-2xl ${tour.imageFit === 'contain' ? 'bg-white/95' : ''}`}>
                     <Image
                       src={tour.image}
                       alt={tour.title}
                       fill
                       sizes="(max-width: 768px) 224px, 256px"
-                      className="object-cover"
+                      className={tour.imageFit === 'contain' ? 'object-contain' : 'object-cover'}
                       quality={100}
+                      priority={idx < 3}
                     />
                   </div>
                 </div>
