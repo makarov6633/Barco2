@@ -41,7 +41,7 @@ const tours = [
     description: 'Roteiro off-road inesquecível!',
     duration: '1h30',
     difficulty: 'Aventura',
-    startingAt: 'R$ 380,00',
+    startingAt: 'R$ 200,00',
     oldPrice: '',
     unit: 'quadriciclo',
     badge: 'OFERTA IMPERDÍVEL',
@@ -55,7 +55,7 @@ const tours = [
     description: 'Equipamento Instrutor',
     duration: '2 horas',
     difficulty: 'Moderado',
-    startingAt: 'R$ 350,00',
+    startingAt: 'R$ 300,00',
     oldPrice: '',
     unit: 'pessoa',
     badge: 'OFERTA IMPERDÍVEL',
@@ -69,7 +69,7 @@ const tours = [
     description: 'Equipamento Instrutor',
     duration: '1h30',
     difficulty: 'Fácil',
-    startingAt: 'R$ 180,00',
+    startingAt: 'R$ 120,00',
     oldPrice: '',
     unit: 'pessoa',
     badge: 'OFERTA IMPERDÍVEL',
@@ -442,8 +442,8 @@ export default function Home() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
             {tours.map((tour, idx) => (
-              <div key={tour.id} className="relative group rounded-3xl p-[2px] ctc-aurora-border ctc-aurora-glow">
-                <div className="relative bg-gradient-to-br from-[#1BA8B8] to-[#0D8A99] rounded-3xl overflow-hidden shadow-xl transition-all duration-300 flex flex-col transform-gpu will-change-transform group-hover:-translate-y-1 group-hover:shadow-2xl">
+              <div key={tour.id} className="relative group rounded-3xl p-[2px] ctc-aurora-border ctc-aurora-glow flex transform-gpu will-change-transform transition-transform duration-300 hover:-translate-y-1">
+                <div className="relative flex-1 bg-gradient-to-br from-[#1BA8B8] to-[#0D8A99] rounded-3xl overflow-hidden shadow-xl transition-all duration-300 flex flex-col group-hover:shadow-2xl">
                   <div className="pointer-events-none absolute inset-0 opacity-30 group-hover:opacity-100 transition-opacity duration-500 ctc-spotlight" />
                   <div className="pointer-events-none absolute -inset-[60%] opacity-0 group-hover:opacity-100 transition-opacity duration-700 ctc-sheen" />
 

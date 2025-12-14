@@ -54,10 +54,3 @@ export async function createBoletoPayment(params: { customerId: string; value: n
   });
 }
 
-export function formatPixMessage(pixQrCode: AsaasPixQrCode, valor: number): string {
-  return `💳 *PAGAMENTO VIA PIX*\n\n💰 Valor: R$ ${valor.toFixed(2)}\n\n📱 *Copie o código abaixo:*\n\`\`\`\n${pixQrCode.payload}\n\`\`\`\n\n⏰ Válido até: ${new Date(pixQrCode.expirationDate).toLocaleString('pt-BR')}\n\n✅ Após o pagamento, você receberá seu voucher automaticamente!\n\n📞 Dúvidas: (22) 99824-9911`;
-}
-
-export function formatBoletoMessage(payment: AsaasPayment, valor: number): string {
-  return `💳 *PAGAMENTO VIA BOLETO*\n\n💰 Valor: R$ ${valor.toFixed(2)}\n\n🔗 *Link do boleto:*\n${payment.bankSlipUrl}\n\n📅 Vencimento: ${new Date(payment.dueDate).toLocaleDateString('pt-BR')}\n\n✅ Após o pagamento, você receberá seu voucher automaticamente.\n\n📞 Dúvidas: (22) 99824-9911`;
-}

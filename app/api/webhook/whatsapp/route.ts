@@ -18,14 +18,14 @@ export async function POST(req: NextRequest) {
     const message = body.trim();
 
     console.log(`\n📨 Nova mensagem de ${telefone}`);
-    console.log(`💬 "${message}"\n`);
+    console.log(`💬 Mensagem recebida (${message.length} chars)\n`);
 
     const response = await processMessage(telefone, message);
 
     const twiml = new MessagingResponse();
     twiml.message(response);
 
-    console.log(`📤 Resposta: "${response.substring(0, 100)}..."\n`);
+    console.log(`📤 Resposta enviada (${response.length} chars)\n`);
 
     return new NextResponse(twiml.toString(), {
       status: 200,
