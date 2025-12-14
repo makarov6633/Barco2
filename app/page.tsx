@@ -178,7 +178,6 @@ const tours = [
     title: 'City Tour Arraial do Cabo',
     subtitle: 'SAINDO DO RIO DE JANEIRO',
     image: '/passeio-city-tour-rio.jpeg',
-    imageFit: 'contain',
     description: 'Explore o deslumbrante Arraial do Cabo saindo do Rio de Janeiro com transporte e passeio de barco!',
     duration: 'Dia inteiro',
     difficulty: 'Conforto',
@@ -221,7 +220,6 @@ const tours = [
     title: 'UM DIA EM ARRAIAL DO CABO',
     subtitle: 'ARRAIAL DO CABO/RJ',
     image: '/passeio-um-dia-arraial.jpeg',
-    imageFit: 'contain',
     description: 'TRANSPORTE + PASSEIO DE BARCO + PASSEIO DE QUADRICICLO',
     duration: 'Dia inteiro',
     difficulty: 'Combo Completo',
@@ -236,7 +234,6 @@ const tours = [
     title: 'TRANSFER EXCLUSIVO',
     subtitle: 'REGIÃO DOS LAGOS/RJ',
     image: '/transfer-van-exclusivo.png',
-    imageFit: 'contain',
     description: 'Van Mercedes Sprinter com 06 passageiros, bancos de couro e ar condicionado.',
     duration: 'Flexível',
     difficulty: 'Conforto',
@@ -445,89 +442,94 @@ export default function Home() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8">
             {tours.map((tour, idx) => (
-              <div key={tour.id} className="relative bg-gradient-to-br from-[#1BA8B8] to-[#0D8A99] rounded-3xl overflow-hidden shadow-xl hover:shadow-2xl transition-all duration-300 flex flex-col">
-                {tour.badge && (
-                  <div className="absolute top-4 right-4 z-10">
-                    <div className="bg-[#FFD700] text-black text-xs font-bold px-3 py-1.5 rounded-full shadow-lg uppercase tracking-wide">
-                      {tour.badge}
+              <div key={tour.id} className="relative group rounded-3xl p-[1px] ctc-aurora-border">
+                <div className="relative bg-gradient-to-br from-[#1BA8B8] to-[#0D8A99] rounded-3xl overflow-hidden shadow-xl transition-all duration-300 flex flex-col transform-gpu will-change-transform group-hover:-translate-y-1 group-hover:shadow-2xl">
+                  <div className="pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 ctc-spotlight" />
+                  <div className="pointer-events-none absolute -inset-[60%] opacity-0 group-hover:opacity-100 transition-opacity duration-700 ctc-sheen" />
+
+                  {tour.badge && (
+                    <div className="absolute top-4 right-4 z-10">
+                      <div className="bg-[#FFD700] text-black text-xs font-bold px-3 py-1.5 rounded-full shadow-lg uppercase tracking-wide">
+                        {tour.badge}
+                      </div>
                     </div>
-                  </div>
-                )}
-                
-                <div className="flex justify-center pt-8 pb-4">
-                  <div className="relative w-56 h-56 md:w-64 md:h-64 rounded-full overflow-hidden ring-8 ring-white/30 shadow-2xl">
-                    {tour.imageFit === 'contain' && (
+                  )}
+                  
+                  <div className="flex justify-center pt-8 pb-4">
+                    <div className="relative w-56 h-56 md:w-64 md:h-64 rounded-full overflow-hidden ring-8 ring-white/30 shadow-2xl">
+                      {tour.imageFit === 'contain' && (
+                        <Image
+                          src={tour.image}
+                          alt=""
+                          aria-hidden
+                          fill
+                          sizes="(max-width: 768px) 224px, 256px"
+                          className="object-cover scale-125 blur-2xl opacity-70"
+                          quality={100}
+                        />
+                      )}
                       <Image
                         src={tour.image}
-                        alt=""
-                        aria-hidden
+                        alt={tour.title}
                         fill
                         sizes="(max-width: 768px) 224px, 256px"
-                        className="object-cover scale-125 blur-2xl opacity-70"
+                        className={`${tour.imageFit === 'contain' ? 'object-contain' : 'object-cover'} transition-transform duration-700 group-hover:scale-110`}
                         quality={100}
+                        priority={idx < 3}
                       />
-                    )}
-                    <Image
-                      src={tour.image}
-                      alt={tour.title}
-                      fill
-                      sizes="(max-width: 768px) 224px, 256px"
-                      className={tour.imageFit === 'contain' ? 'object-contain' : 'object-cover'}
-                      quality={100}
-                      priority={idx < 3}
-                    />
-                  </div>
-                </div>
-
-                <div className="px-6 pb-6 flex flex-col flex-1 text-white text-center">
-                  <h3 className="text-2xl md:text-3xl font-black mb-2 leading-tight uppercase tracking-tight">{tour.title}</h3>
-                  
-                  <div className="inline-block bg-[#FFD700] text-black text-xs font-bold px-4 py-1 rounded-full mx-auto mb-3 shadow-md">
-                    {tour.subtitle}
-                  </div>
-                  
-                  <p className="text-base mb-4 font-medium">{tour.description}</p>
-
-                  <div className="flex flex-wrap justify-center gap-3 mb-4 text-sm">
-                    {tour.duration && (
-                      <div className="flex items-center gap-1.5 bg-white/20 px-3 py-1.5 rounded-full">
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
-                        </svg>
-                        <span>{tour.duration}</span>
-                      </div>
-                    )}
-                    {tour.difficulty && (
-                      <div className="flex items-center gap-1.5 bg-white/20 px-3 py-1.5 rounded-full">
-                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
-                          <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm9.707 5.707a1 1 0 00-1.414-1.414L9 12.586l-1.293-1.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
-                        <span>{tour.difficulty}</span>
-                      </div>
-                    )}
+                    </div>
                   </div>
 
-                  <div className="mt-auto">
-                    <div className="bg-white/20 rounded-2xl p-4 mb-4 backdrop-blur-sm">
-                      <div className="text-sm font-medium mb-1 opacity-90">A partir de</div>
-                      <div className="text-3xl font-black">{tour.startingAt}</div>
-                      {tour.oldPrice && (
-                        <div className="text-sm line-through opacity-70 mt-1">{tour.oldPrice}</div>
-                      )}
-                      <div className="text-xs opacity-90 mt-1">por {tour.unit}</div>
+                  <div className="px-6 pb-6 flex flex-col flex-1 text-white text-center">
+                    <h3 className="text-2xl md:text-3xl font-black mb-2 leading-tight uppercase tracking-tight">{tour.title}</h3>
+                    
+                    <div className="inline-block bg-[#FFD700] text-black text-xs font-bold px-4 py-1 rounded-full mx-auto mb-3 shadow-md">
+                      {tour.subtitle}
                     </div>
                     
-                    <Link
-                      href={`${whatsappLink}?text=${encodeURIComponent(tour.whatsappMessage)}`}
-                      target="_blank"
-                      className="w-full inline-flex items-center justify-center gap-2 bg-white hover:bg-gray-100 text-[#1BA8B8] font-black py-4 rounded-2xl transition-all hover:scale-105 active:scale-95 text-base shadow-xl uppercase tracking-wide"
-                    >
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                      Ver disponibilidade
-                    </Link>
+                    <p className="text-base mb-4 font-medium">{tour.description}</p>
+
+                    <div className="flex flex-wrap justify-center gap-3 mb-4 text-sm">
+                      {tour.duration && (
+                        <div className="flex items-center gap-1.5 bg-white/20 px-3 py-1.5 rounded-full">
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd" />
+                          </svg>
+                          <span>{tour.duration}</span>
+                        </div>
+                      )}
+                      {tour.difficulty && (
+                        <div className="flex items-center gap-1.5 bg-white/20 px-3 py-1.5 rounded-full">
+                          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" />
+                            <path fillRule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm9.707 5.707a1 1 0 00-1.414-1.414L9 12.586l-1.293-1.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                          </svg>
+                          <span>{tour.difficulty}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="mt-auto">
+                      <div className="bg-white/20 rounded-2xl p-4 mb-4 backdrop-blur-sm">
+                        <div className="text-sm font-medium mb-1 opacity-90">A partir de</div>
+                        <div className="text-3xl font-black tracking-tight">{tour.startingAt}</div>
+                        {tour.oldPrice && (
+                          <div className="text-sm line-through opacity-70 mt-1">{tour.oldPrice}</div>
+                        )}
+                        <div className="text-xs opacity-90 mt-1">por {tour.unit}</div>
+                      </div>
+                      
+                      <Link
+                        href={`${whatsappLink}?text=${encodeURIComponent(tour.whatsappMessage)}`}
+                        target="_blank"
+                        className="w-full inline-flex items-center justify-center gap-2 bg-white hover:bg-gray-100 text-[#1BA8B8] font-black py-4 rounded-2xl transition-all hover:scale-105 active:scale-95 text-base shadow-xl uppercase tracking-wide"
+                      >
+                        <svg className="w-5 h-5 transition-transform duration-300 group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                        Ver disponibilidade
+                      </Link>
+                    </div>
                   </div>
                 </div>
               </div>
