@@ -164,33 +164,36 @@ export async function getConversationContext(telefone: string): Promise<Conversa
       .eq('telefone', telefone)
       .single();
 
-    if (data) {
-      const metadata: ConversationMetadata = data.metadata || {};
-      if (!Array.isArray(metadata.memories)) {
-        metadata.memories = [];
-      }
-
+    if (error || !data) {
       return {
-        telefone: data.telefone,
-        nome: data.nome,
-        conversationHistory: data.conversation_history || [],
-        currentFlow: data.current_flow,
-        flowStep: data.flow_step,
-        tempData: data.temp_data || {},
-        lastIntent: data.last_intent,
-        lastMessage: data.last_message,
-        lastMessageTime: data.last_message_time,
-        metadata
+        telefone,
+        conversationHistory: [],
+        tempData: {},
+        metadata: { memories: [] }
       };
     }
 
+    const rawContext = (data as any).context;
+    const parsedContext = rawContext && typeof rawContext === 'object' ? rawContext : {};
+
+    const metadata: ConversationMetadata = parsedContext.metadata || {};
+    if (!Array.isArray(metadata.memories)) {
+      metadata.memories = [];
+    }
+
     return {
-      telefone,
-      conversationHistory: [],
-      tempData: {},
-      metadata: { memories: [] }
+      telefone: (data as any).telefone || telefone,
+      nome: parsedContext.nome,
+      conversationHistory: Array.isArray(parsedContext.conversationHistory) ? parsedContext.conversationHistory : [],
+      currentFlow: parsedContext.currentFlow,
+      flowStep: parsedContext.flowStep,
+      tempData: parsedContext.tempData || {},
+      lastIntent: (data as any).last_intent || parsedContext.lastIntent,
+      lastMessage: (data as any).last_message || parsedContext.lastMessage,
+      lastMessageTime: parsedContext.lastMessageTime,
+      metadata
     };
-  } catch (error) {
+  } catch {
     return {
       telefone,
       conversationHistory: [],
@@ -204,36 +207,41 @@ export async function saveConversationContext(context: ConversationContext): Pro
   try {
     const supabase = getSupabase();
 
-    const { data: existing } = await supabase
-      .from('conversation_contexts')
-      .select('telefone')
-      .eq('telefone', context.telefone)
-      .single();
-
     const metadata: ConversationMetadata = context.metadata || {};
     if (!Array.isArray(metadata.memories)) {
       metadata.memories = [];
     }
     context.metadata = metadata;
 
-    const payload = {
+    const payload: any = {
       telefone: context.telefone,
-      nome: context.nome,
-      conversation_history: context.conversationHistory,
-      current_flow: context.currentFlow,
-      flow_step: context.flowStep,
-      temp_data: context.tempData,
-      last_intent: context.lastIntent,
+      context: {
+        nome: context.nome,
+        conversationHistory: context.conversationHistory || [],
+        currentFlow: context.currentFlow,
+        flowStep: context.flowStep,
+        tempData: context.tempData || {},
+        lastIntent: context.lastIntent,
+        lastMessage: context.lastMessage,
+        lastMessageTime: context.lastMessageTime,
+        metadata
+      },
       last_message: context.lastMessage,
-      last_message_time: context.lastMessageTime || new Date().toISOString(),
-      metadata
+      last_intent: context.lastIntent,
+      last_updated: new Date().toISOString()
     };
 
-    if (existing) {
+    const { data: existing } = await supabase
+      .from('conversation_contexts')
+      .select('id')
+      .eq('telefone', context.telefone)
+      .maybeSingle();
+
+    if (existing?.id) {
       await supabase
         .from('conversation_contexts')
         .update(payload)
-        .eq('telefone', context.telefone);
+        .eq('id', existing.id);
     } else {
       await supabase
         .from('conversation_contexts')

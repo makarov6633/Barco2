@@ -166,14 +166,21 @@ function getMissing(fields: Array<[string, any]>) {
 function bestPasseioMatches(passeios: any[], term: string) {
   const q = normalizeString(term);
   if (!q) return [];
+
+  const tokens = Array.from(new Set(q.split(' ').filter(t => t.length >= 3)));
+
   const scored = passeios
     .map(p => {
       const hay = normalizeString(`${p.nome} ${p.categoria || ''} ${p.local || ''} ${p.descricao || ''}`);
-      const idx = hay.indexOf(q);
-      const score = idx === -1 ? 0 : Math.max(1, 100 - idx);
-      return { p, score };
+      let hits = 0;
+      for (const t of tokens) {
+        if (hay.includes(t)) hits += 1;
+      }
+      const exactIdx = hay.indexOf(q);
+      const score = hits * 100 + (exactIdx === -1 ? 0 : 50) + (exactIdx === -1 ? 0 : Math.max(0, 30 - exactIdx));
+      return { p, score, hits };
     })
-    .filter(x => x.score > 0)
+    .filter(x => x.hits > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, 5)
     .map(x => x.p);
@@ -199,7 +206,10 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
       const filtered = termo
         ? passeios.filter(p => {
             const hay = normalizeString(`${p.nome} ${p.categoria || ''} ${p.local || ''} ${p.descricao || ''}`);
-            return hay.includes(normalizeString(termo));
+            const q = normalizeString(termo);
+            const tokens = q.split(' ').filter(t => t.length >= 3);
+            if (!tokens.length) return hay.includes(q);
+            return tokens.every(t => hay.includes(t));
           })
         : passeios;
 
@@ -209,12 +219,11 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
           id: p.id,
           nome: p.nome,
           categoria: p.categoria,
-          descricao: p.descricao,
+          descricao: p.descricao ? String(p.descricao).slice(0, 280) : null,
           local: p.local,
           duracao: p.duracao,
           preco_min: p.preco_min != null ? Number(p.preco_min) : null,
           preco_max: p.preco_max != null ? Number(p.preco_max) : null,
-          includes: p.includes,
           horarios: p.horarios
         }))
       };
@@ -235,12 +244,11 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
           id: p.id,
           nome: p.nome,
           categoria: p.categoria,
-          descricao: p.descricao,
+          descricao: p.descricao ? String(p.descricao).slice(0, 280) : null,
           local: p.local,
           duracao: p.duracao,
           preco_min: p.preco_min != null ? Number(p.preco_min) : null,
           preco_max: p.preco_max != null ? Number(p.preco_max) : null,
-          includes: p.includes,
           horarios: p.horarios
         }))
       };

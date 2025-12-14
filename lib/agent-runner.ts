@@ -1,7 +1,70 @@
 import { ConversationContext } from './supabase';
-import { executeTool, getToolsForPrompt, ToolName } from './agent-tools';
+import { executeTool, ToolName } from './agent-tools';
 import { groqChat } from './groq-client';
 import { parseToolCalls, stripToolBlocks } from './agent-toolcall';
+
+function normalizeString(value?: string) {
+  return (value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function shouldForceToolForUserMessage(userMessage: string) {
+  const t = normalizeString(userMessage);
+  if (!t) return false;
+
+  const keywords = [
+    'preco',
+    'valor',
+    'quanto',
+    'custa',
+    'tabela',
+    'passeio',
+    'barco',
+    'buggy',
+    'quadriciclo',
+    'mergulho',
+    'snorkel',
+    'paramotor',
+    'jetski',
+    'jet ski',
+    'escuna',
+    'lancha',
+    'transfer',
+    'city',
+    'combo',
+    'open bar'
+  ];
+
+  return keywords.some(k => t.includes(k));
+}
+
+function looksLikeStall(text: string) {
+  const t = normalizeString(text);
+  if (!t) return false;
+  return (
+    (t.includes('deixa eu ver') ||
+      t.includes('aguarde') ||
+      t.includes('um instante') ||
+      t.includes('ja estou verificando') ||
+      t.includes('ja vou ver')) &&
+    t.length < 180
+  );
+}
+
+function looksLikeHallucinatedToolResult(text: string) {
+  if (!text) return false;
+  if (/<tool_result/i.test(text)) return true;
+  if (/resultado\s+da\s+ferramenta/i.test(text)) return true;
+  if (/"success"\s*:/i.test(text)) return true;
+  if (/\btool_result\b/i.test(text)) return true;
+  if (/<\|assistant/i.test(text) || /<\|channel\|>/i.test(text)) return true;
+  return false;
+}
 
 function getBrazilTodayISO() {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -27,23 +90,14 @@ function getBrazilTodayISO() {
 }
 
 function buildSystemPrompt() {
-  const tools = getToolsForPrompt();
-  const toolsText = tools
-    .map(t => {
-      const params = JSON.stringify(t.params);
-      return `- ${t.name}: ${t.description}\n  params: ${params}`;
-    })
-    .join('\n');
-
-  return `# IDENTITY\nVocê é o CALEB, assistente virtual da Caleb's Tour em Cabo Frio/RJ. Você é um guia local: simpático, praiano, direto e convidativo.\n\n# OBJETIVO\nAjudar o cliente a escolher passeios, tirar dúvidas, fechar reserva e gerar pagamento (PIX ou boleto).\n\n# REGRAS INVIOLÁVEIS\n1) DADOS REAIS: não invente preços, roteiros, horários ou regras. Se precisar de informação, use uma ferramenta.\n2) RESULTADO DE FERRAMENTA É VERDADE: quando receber \"Resultado da ferramenta ...\", use o JSON como fonte oficial para responder.\n3) NUNCA fale que está consultando banco/sistema; fale como humano (ex: \"Deixa eu ver pra você\").\n4) SEM RESPOSTAS ENGESSADAS: varie e responda de forma contextual ao que a pessoa falou.\n5) Não recomece do zero nem se reapresente a cada mensagem. Use o histórico para entender respostas curtas tipo \"1\", \"amanhã\", \"PIX\".\n6) Se faltar alguma informação para reservar/pagar, faça 1 pergunta objetiva por vez.\n7) Mensagens curtas estilo WhatsApp (normalmente 2–6 linhas).\n\n# FERRAMENTAS\nQuando precisar agir, responda com APENAS o bloco da ferramenta (nenhum texto antes/depois).\nSintaxe: [TOOL:nome]{json}[/TOOL]\nChame apenas 1 ferramenta por vez.\n\nFerramentas disponíveis:\n${toolsText}\n\n# COMO CONDUZIR\n- Perguntas de preço/roteiro: use consultar_passeios ou buscar_passeio_especifico e responda com os dados retornados.\n- Reserva: só chame criar_reserva quando tiver (nome, passeio_id ou passeio, data e num_pessoas).\n- Pagamento: só chame gerar_pagamento quando tiver reserva_id. Se a pessoa pedir pagamento sem reserva, crie a reserva primeiro.\n- Se a ferramenta retornar success=false, explique de forma humana e peça exatamente os dados que faltam.\n\n# ESTILO\nPortuguês-BR, informal, com emojis moderados (🌊🚤☀️😊✨).`;
+  return `# IDENTITY\nVocê é o CALEB, assistente virtual da Caleb's Tour em Cabo Frio/RJ. Você é um guia local: simpático, praiano, direto e convidativo.\n\n# OBJETIVO\nAjudar o cliente a escolher passeios, tirar dúvidas, fechar reserva e gerar pagamento (PIX ou boleto).\n\n# REGRAS INVIOLÁVEIS\n1) DADOS REAIS: não invente preços, roteiros, horários, regras ou disponibilidade.\n2) SEM FERRAMENTA = SEM DADO: se a mensagem exigir dados (preço/passeio/reserva/pagamento), você DEVE chamar uma ferramenta.\n3) RESULTADOS SÓ VÊM DO SISTEMA: você só tem acesso a resultados quando receber uma mensagem system no formato:\n   <tool_result name=\"NOME\">{\"success\":...}</tool_result>\n4) PROIBIDO INVENTAR TOOL RESULT: nunca escreva \"Resultado da ferramenta\", nunca invente JSON e nunca simule que chamou ferramenta.\n5) NUNCA diga \"consultando banco/sistema\". Fale como humano (ex: \"Deixa eu ver pra você\").\n6) Não recomece do zero nem se reapresente a cada mensagem. Use o histórico para entender respostas curtas tipo \"1\", \"amanhã\", \"PIX\".\n7) Se faltar alguma informação para reservar/pagar, faça 1 pergunta objetiva por vez.\n8) Não mostre IDs, JSON ou tags internas para o cliente.\n\n# FERRAMENTAS\nQuando precisar agir, responda com APENAS o bloco da ferramenta (nada antes/depois).\nSintaxe EXATA (maiúsculas):\n[TOOL:nome]{json}[/TOOL]\nChame apenas 1 ferramenta por vez.\n\nFerramentas disponíveis:\n- consultar_passeios: lista passeios do Supabase (pode filtrar por termo).\n  exemplo: [TOOL:consultar_passeios]{}[/TOOL] ou [TOOL:consultar_passeios]{\"termo\":\"barco\"}[/TOOL]\n- buscar_passeio_especifico: busca passeio por termo (nome/categoria/local).\n  exemplo: [TOOL:buscar_passeio_especifico]{\"termo\":\"quadriciclo\"}[/TOOL]\n- criar_reserva: cria reserva (precisa nome, passeio_id ou passeio, data, num_pessoas).\n  exemplo: [TOOL:criar_reserva]{\"nome\":\"Lucas Vargas\",\"passeio\":\"barco com toboagua\",\"data\":\"amanhã\",\"num_pessoas\":2}[/TOOL]\n- gerar_pagamento: gera cobrança (PIX/BOLETO) a partir de reserva_id.\n  exemplo: [TOOL:gerar_pagamento]{\"reserva_id\":\"uuid\",\"tipo_pagamento\":\"PIX\"}[/TOOL]\n- gerar_voucher: retorna dados do voucher para reserva confirmada.\n  exemplo: [TOOL:gerar_voucher]{\"reserva_id\":\"uuid\"}[/TOOL]\n\n# COMO RESPONDER\n- Se a ferramenta retornar success=false, explique de forma humana e peça exatamente o que falta.\n- Mensagens curtas estilo WhatsApp.\n- Emojis moderados (🌊🚤☀️😊✨).`;
 }
 
 function buildMessages(context: ConversationContext) {
-  const systemPrompt = buildSystemPrompt();
   const today = getBrazilTodayISO();
 
   const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-    { role: 'system', content: systemPrompt },
+    { role: 'system', content: buildSystemPrompt() },
     { role: 'system', content: `Data atual (America/Sao_Paulo): ${today}` }
   ];
 
@@ -81,32 +135,74 @@ export async function runAgentLoop(params: {
 
   context.conversationHistory.push({ role: 'user', content: userMessage });
 
-  const maxSteps = 6;
-  let assistant = '';
+  const allowedTools = new Set<ToolName>([
+    'consultar_passeios',
+    'buscar_passeio_especifico',
+    'criar_reserva',
+    'gerar_pagamento',
+    'gerar_voucher'
+  ]);
+
+  const maxSteps = 16;
+  let hasToolResult = false;
 
   for (let step = 0; step < maxSteps; step++) {
     const messages = buildMessages(context);
-    assistant = await groqChat({ messages });
+    const assistant = await groqChat({ messages, temperature: 0.15 });
 
     const calls = parseToolCalls(assistant);
+
     if (!calls.length) {
       const cleaned = stripToolBlocks(assistant);
+
+      if (!hasToolResult) {
+        const force = shouldForceToolForUserMessage(userMessage);
+        const stall = looksLikeStall(cleaned);
+        const hallucinated = looksLikeHallucinatedToolResult(cleaned);
+
+        if (force || stall || hallucinated) {
+          context.conversationHistory.push({
+            role: 'system',
+            content:
+              'INSTRUÇÃO: Sua resposta anterior foi inválida porque você não chamou uma ferramenta quando precisava. Agora responda APENAS com um bloco [TOOL:...]...[/TOOL] adequado. Não escreva texto.'
+          });
+          continue;
+        }
+      }
+
+      if (hasToolResult && looksLikeHallucinatedToolResult(cleaned)) {
+        context.conversationHistory.push({
+          role: 'system',
+          content:
+            'INSTRUÇÃO: Não mostre JSON/tags internas ao cliente. Responda apenas com texto natural, usando o último <tool_result> como fonte.'
+        });
+        continue;
+      }
+
       return cleaned || 'Tive um erro rapidinho aqui 😅 Pode repetir em uma frase?';
     }
 
     const first = calls[0];
     const name = first.name as ToolName;
 
-    if (!['consultar_passeios', 'buscar_passeio_especifico', 'criar_reserva', 'gerar_pagamento', 'gerar_voucher'].includes(name)) {
+    if (!allowedTools.has(name)) {
       context.conversationHistory.push({ role: 'assistant', content: assistant });
-      context.conversationHistory.push({ role: 'system', content: `Resultado da ferramenta ${first.name}: ${JSON.stringify({ success: false, error: { code: 'unknown_tool', message: 'Ferramenta não permitida.' } })}` });
+      context.conversationHistory.push({
+        role: 'system',
+        content: `<tool_result name="${first.name}">${JSON.stringify({ success: false, error: { code: 'unknown_tool', message: 'Ferramenta não permitida.' } })}</tool_result>`
+      });
+      hasToolResult = true;
       continue;
     }
 
     context.conversationHistory.push({ role: 'assistant', content: assistant });
 
     const toolResult = await executeTool(name, first.params || {}, { telefone, conversation: context });
-    context.conversationHistory.push({ role: 'system', content: `Resultado da ferramenta ${name}: ${JSON.stringify(toolResult)}` });
+    context.conversationHistory.push({
+      role: 'system',
+      content: `<tool_result name="${name}">${JSON.stringify(toolResult)}</tool_result>`
+    });
+    hasToolResult = true;
   }
 
   return 'Ops! Meu sistema ficou preso aqui 😅 Pode me dizer de novo o que você quer (passeio + data + pessoas)?';

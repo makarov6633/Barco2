@@ -26,10 +26,10 @@ export function parseToolCalls(text: string): ToolCall[] {
   const calls: ToolCall[] = [];
   if (!text) return calls;
 
-  const regex = /\[TOOL:([a-zA-Z0-9_]+)\]([\s\S]*?)\[\/TOOL\]/g;
+  const regex = /\[TOOL:([a-zA-Z0-9_]+)\]([\s\S]*?)\[\/TOOL\]/gi;
   let m: RegExpExecArray | null;
   while ((m = regex.exec(text))) {
-    const name = m[1]?.trim();
+    const name = m[1]?.trim().toLowerCase();
     const rawParams = (m[2] ?? '').trim();
     if (!name) continue;
 
@@ -47,5 +47,5 @@ export function parseToolCalls(text: string): ToolCall[] {
 }
 
 export function stripToolBlocks(text: string) {
-  return (text || '').replace(/\[TOOL:[a-zA-Z0-9_]+\][\s\S]*?\[\/TOOL\]/g, '').trim();
+  return (text || '').replace(/\[TOOL:[a-zA-Z0-9_]+\][\s\S]*?\[\/TOOL\]/gi, '').trim();
 }
