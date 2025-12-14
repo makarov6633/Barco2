@@ -190,9 +190,16 @@ function bestPasseioMatches(passeios: any[], term: string) {
 
 function requireSafeToChargeLive() {
   const isProd = process.env.NODE_ENV === 'production';
-  const sandboxRaw = String(process.env.ASAAS_SANDBOX ?? '').toLowerCase();
-  const sandbox = sandboxRaw === 'true' || sandboxRaw === '1' || sandboxRaw === 'yes';
   if (isProd) return;
+
+  const sandboxRaw = String(process.env.ASAAS_SANDBOX ?? '').toLowerCase();
+  const sandboxFlag = sandboxRaw === 'true' || sandboxRaw === '1' || sandboxRaw === 'yes';
+
+  const envRaw = String(process.env.ASAAS_ENV ?? '').toLowerCase();
+  const baseUrl = String(process.env.ASAAS_BASE_URL ?? '').toLowerCase();
+
+  const sandbox = sandboxFlag || envRaw === 'sandbox' || envRaw === 'test' || baseUrl.includes('sandbox');
+
   if (!sandbox) {
     throw new Error('Pagamentos em produção bloqueados fora de production (defina ASAAS_SANDBOX=true para testar localmente).');
   }
@@ -373,10 +380,53 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
 
       const reservaId = String(params?.reserva_id ?? params?.reservaId ?? ctx.conversation.tempData?.reservaId ?? '').trim();
       const tipo = pickPaymentType(params);
-      const cpf = params?.cpf ? String(params.cpf).trim() : undefined;
-      const email = params?.email ? String(params.email).trim() : undefined;
 
-      const missing = getMissing([['reserva_id', reservaId]]);
+      const cpfInput = String(
+        params?.cpf ??
+          params?.cpf_cnpj ??
+          params?.cpfCnpj ??
+          ctx.conversation.tempData?.cpf ??
+          ''
+      ).trim();
+
+      const emailInput = String(params?.email ?? ctx.conversation.tempData?.email ?? '').trim();
+
+      const cpfDigits = cpfInput.replace(/\D/g, '');
+      if (cpfInput && cpfDigits && cpfDigits.length !== 11 && cpfDigits.length !== 14) {
+        return {
+          success: false,
+          error: {
+            code: 'invalid_cpf',
+            message: 'CPF/CNPJ inválido. Envie só números.',
+            details: { cpf: cpfInput }
+          }
+        };
+      }
+
+      const email = emailInput || undefined;
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return {
+          success: false,
+          error: {
+            code: 'invalid_email',
+            message: 'E-mail inválido. Pode reenviar?',
+            details: { email }
+          }
+        };
+      }
+
+      ctx.conversation.tempData ||= {};
+      if (cpfDigits) ctx.conversation.tempData.cpf = cpfDigits;
+      if (email) ctx.conversation.tempData.email = email;
+
+      const missing = getMissing([
+        ['reserva_id', reservaId],
+        ['cpf', cpfDigits]
+      ]);
+      if (tipo === 'BOLETO') {
+        missing.push(...getMissing([['email', email]]));
+      }
+
       if (missing.length) {
         return { success: false, error: { code: 'missing_fields', message: 'Faltam dados para gerar pagamento.', missing } };
       }
@@ -446,7 +496,7 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
 
       const asaasCustomer = await findOrCreateCustomer({
         name: String(params?.nome ?? cliente.nome ?? 'Cliente'),
-        cpfCnpj: cpf || cliente.cpf || undefined,
+        cpfCnpj: cpfDigits,
         email: email || cliente.email || undefined,
         phone: cliente.telefone
       });

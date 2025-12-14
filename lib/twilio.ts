@@ -3,11 +3,16 @@ import twilio from 'twilio';
 let cachedClient: ReturnType<typeof twilio> | null = null;
 
 function getTwilioClient() {
+  if ((process.env.TWILIO_DISABLE || '').toLowerCase() === 'true') {
+    return null;
+  }
+
   const accountSid = process.env.TWILIO_ACCOUNT_SID;
   const authToken = process.env.TWILIO_AUTH_TOKEN;
   if (!accountSid || !authToken) {
-    throw new Error('Twilio não configurado (TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN).');
+    return null;
   }
+
   cachedClient ||= twilio(accountSid, authToken);
   return cachedClient;
 }
@@ -15,6 +20,7 @@ function getTwilioClient() {
 export async function sendWhatsAppMessage(to: string, message: string): Promise<boolean> {
   try {
     const client = getTwilioClient();
+    if (!client) return false;
     const from = process.env.TWILIO_WHATSAPP_FROM || 'whatsapp:+14155238886';
 
     await client.messages.create({
