@@ -274,7 +274,7 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
       const passeios = await getAllPasseios();
       let passeio = passeioId ? passeios.find(p => p.id === passeioId) : undefined;
       if (!passeio && passeioId) {
-        passeio = await getPasseioById(passeioId);
+        passeio = (await getPasseioById(passeioId)) || undefined;
       }
 
       if (!passeio && passeioTerm) {
