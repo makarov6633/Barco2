@@ -219,7 +219,7 @@ const tours = [
     id: 'um-dia-arraial',
     title: 'UM DIA EM ARRAIAL DO CABO',
     subtitle: 'ARRAIAL DO CABO/RJ',
-    image: '/passeio-buggy-exclusivo-sunset.jpg',
+    image: '/passeio-um-dia-arraial.jpeg',
     description: 'TRANSPORTE + PASSEIO DE BARCO + PASSEIO DE QUADRICICLO',
     duration: 'Dia inteiro',
     difficulty: 'Combo Completo',
