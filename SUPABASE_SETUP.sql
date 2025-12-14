@@ -41,18 +41,13 @@ CREATE TABLE IF NOT EXISTS reservas (
 CREATE TABLE IF NOT EXISTS conversation_contexts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   telefone TEXT UNIQUE NOT NULL,
-  nome TEXT,
-  conversation_history JSONB DEFAULT '[]',
-  current_flow TEXT,
-  flow_step TEXT,
-  temp_data JSONB DEFAULT '{}',
-  last_intent TEXT,
-  last_message TEXT,
-  last_message_time TIMESTAMPTZ,
-  metadata JSONB DEFAULT '{}',
+  context JSONB DEFAULT '{}'::jsonb,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+ALTER TABLE conversation_contexts
+  ADD COLUMN IF NOT EXISTS context JSONB DEFAULT '{}'::jsonb;
 
 -- Inserir passeios de exemplo (se não existirem)
 INSERT INTO passeios (id, nome, categoria, preco_min, preco_max, duracao, local) VALUES

@@ -1,5 +1,5 @@
 import Groq from 'groq-sdk';
-import { FAQ_GENERAL, TOURS_INFO, CALEB_INFO, FAQ_PERFIL, FAQ_TEMPORADA } from './knowledge-base';
+import { TOURS_INFO, CALEB_INFO } from './knowledge-base';
 
 let cachedGroq: Groq | null = null;
 
@@ -15,38 +15,109 @@ function getGroq() {
 const REASONING_MODEL = process.env.GROQ_REASONING_MODEL || 'openai/gpt-oss-120b';
 const INTENT_MODEL = process.env.GROQ_INTENT_MODEL || 'openai/gpt-oss-120b';
 
-const SYSTEM_PROMPT = `Você é a Ana, atendente estrela da Caleb's Tour (CTC) no WhatsApp.
-Sua missão é encantar clientes, vender passeios e manter um papo humano, divertido e acolhedor.
+const TOURS_SUMMARY = Object.values(TOURS_INFO)
+  .map((tour: any) => {
+    const name = tour?.nome ? String(tour.nome) : '';
+    const categoria = tour?.categoria ? ` (${String(tour.categoria)})` : '';
+    const duracao = tour?.duracao ? ` • ${String(tour.duracao)}` : '';
+    const saidas = Array.isArray(tour?.saidas) && tour.saidas.length ? ` • saídas: ${tour.saidas.join('/')}` : '';
+    const desc = tour?.descricao_curta ? ` • ${String(tour.descricao_curta)}` : '';
+    return `- ${name}${categoria}${duracao}${saidas}${desc}`.trim();
+  })
+  .filter(Boolean)
+  .join('\n');
 
-BASE DE CONHECIMENTO DA EMPRESA:
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getErrorStatus(error: any): number | undefined {
+  const status = error?.status ?? error?.statusCode ?? error?.response?.status;
+  return typeof status === 'number' ? status : undefined;
+}
+
+function readHeader(headers: any, key: string): string | undefined {
+  if (!headers) return undefined;
+  const lower = key.toLowerCase();
+
+  if (typeof headers.get === 'function') {
+    const value = headers.get(lower) ?? headers.get(key);
+    return typeof value === 'string' ? value : undefined;
+  }
+
+  if (typeof headers === 'object') {
+    for (const [k, v] of Object.entries(headers)) {
+      if (k.toLowerCase() !== lower) continue;
+      if (typeof v === 'string') return v;
+      if (Array.isArray(v) && typeof v[0] === 'string') return v[0];
+    }
+  }
+
+  return undefined;
+}
+
+function extractRetryAfterMs(error: any): number | undefined {
+  const headers = error?.headers ?? error?.response?.headers;
+  const retryAfter = readHeader(headers, 'retry-after');
+  if (!retryAfter) return undefined;
+
+  const seconds = Number(retryAfter);
+  if (Number.isFinite(seconds) && seconds > 0) {
+    return seconds * 1000;
+  }
+
+  const dateMs = Date.parse(retryAfter);
+  if (!Number.isNaN(dateMs)) {
+    const diff = dateMs - Date.now();
+    return diff > 0 ? diff : undefined;
+  }
+
+  return undefined;
+}
+
+function isRetryableGroqError(error: any): boolean {
+  const status = getErrorStatus(error);
+  if (status === 429) return true;
+  if (status && status >= 500 && status <= 599) return true;
+  return false;
+}
+
+async function withGroqRetry<T>(fn: () => Promise<T>): Promise<T> {
+  const maxRetries = 2;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (attempt >= maxRetries || !isRetryableGroqError(error)) {
+        throw error;
+      }
+
+      const retryAfterMs = extractRetryAfterMs(error);
+      const backoffMs = 450 * Math.pow(2, attempt);
+      const delayMs = Math.min(2500, retryAfterMs ?? backoffMs) + Math.floor(Math.random() * 120);
+      await sleep(delayMs);
+    }
+  }
+}
+
+const SYSTEM_PROMPT = `Você é a Ana, atendente da Caleb's Tour (CTC) no WhatsApp.
+Tom: carioca, calorosa, humana, prestativa (sem soar robô).
+
+CONTATO HUMANO: (22) 99824-9911.
+PAGAMENTO: Pix, dinheiro e cartão (crédito/débito). Pode pedir sinal para garantir a reserva.
+
+DADOS OFICIAIS:
 ${CALEB_INFO}
 
-CATÁLOGO COMPLETO DE PASSEIOS:
-${JSON.stringify(TOURS_INFO, null, 2)}
+PASSEIOS (resumo rápido):
+${TOURS_SUMMARY}
 
-FAQ GERAL:
-${FAQ_GENERAL.map(f => `P: ${f.p} | R: ${f.r}`).join('\n')}
-
-FAQ POR PERFIL:
-Famílias: ${FAQ_PERFIL.familia_bebe.map(f => `P: ${f.p} | R: ${f.r}`).join('\n')}
-Casais: ${FAQ_PERFIL.casal_lua_de_mel.map(f => `P: ${f.p} | R: ${f.r}`).join('\n')}
-Grupos: ${FAQ_PERFIL.grupo_grande.map(f => `P: ${f.p} | R: ${f.r}`).join('\n')}
-
-FAQ TEMPORADA:
-${Object.values(FAQ_TEMPORADA).flat().map(f => `P: ${f.p} | R: ${f.r}`).join('\n')}
-
-PERSONALIDADE:
-- Brasileira, carioca, calorosa, usa expressões como "Tudo certo?", "Partiu?", "Fica tranquila".
-- Mensagens com 2-3 frases curtas, usando parágrafos curtos.
-- Emojis estratégicos: 😊🌊🚤✨🤿💙🔥
-- Chame o cliente pelo primeiro nome sempre que souber.
-- Traga detalhes concretos dos passeios e sugira próximos passos.
-- Sempre finalize com convite ou pergunta para avançar ("Quer que eu reserve pra você?", "Qual horário combina melhor?").
-- Reforce diferenciais da Caleb's Tour: fotos lindas, atendimento humano, experiência premium.
-- Em preços, mencione faixa e já convide para informar número de pessoas e data.
-- Se não tiver certeza, diga que vai confirmar com o gerente e mantenha o cliente informado.
-- Mantenha o histórico em mente e evite repetir informações.
-- Demonstre empatia real com o tom do cliente (feliz, frustrado, com pressa).`;
+REGRAS:
+- Responda curto (2-3 frases) e com parágrafos curtos.
+- Emojis pontuais.
+- Chame o cliente pelo primeiro nome quando souber.
+- Sempre finalize com uma pergunta/convite para avançar.
+- Não invente preços/dados: se faltar, diga que vai confirmar e peça data + nº de pessoas.`;
 
 const INTENT_SYSTEM_PROMPT = `Você é um analisador de intenções para uma agência de turismo que vende passeios em Arraial do Cabo, Cabo Frio e região.
 Receba a mensagem do cliente e retorne APENAS JSON válido e minificado seguindo exatamente esta estrutura:
@@ -70,12 +141,19 @@ const ALLOWED_INTENTS = new Set([
 ]);
 
 const PASSEIO_KEYWORDS = [
+  { value: 'toboagua', keywords: ['toboagua', 'tobo agua', 'tobo-agua', 'toboágua'] },
+  { value: 'openbar', keywords: ['open bar'] },
+  { value: 'openfood', keywords: ['open food'] },
   { value: 'arraial', keywords: ['arraial', 'arraial do cabo', 'caribe brasileiro'] },
   { value: 'cabo_frio', keywords: ['cabo frio'] },
-  { value: 'barco', keywords: ['barco', 'escuna', 'catamarã', 'catamara'] },
-  { value: 'buggy', keywords: ['buggy', 'quadriciclo', 'quadri'] },
+  { value: 'escuna', keywords: ['escuna', 'buzios', 'búzios'] },
+  { value: 'catamara', keywords: ['catamara', 'catamarã', 'black diamond'] },
   { value: 'lancha', keywords: ['lancha', 'privado', 'vip'] },
+  { value: 'quadri', keywords: ['quadriciclo', 'quadri', 'utv'] },
+  { value: 'buggy', keywords: ['buggy'] },
+  { value: 'jet', keywords: ['jet ski', 'jetski', 'jet'] },
   { value: 'mergulho', keywords: ['mergulho', 'cilindro', 'snorkel'] },
+  { value: 'barco', keywords: ['barco', 'passeio de barco', 'catamarã', 'catamara'] },
   { value: 'city', keywords: ['city tour', 'rio', 'cristoredentor', 'cristo redentor'] },
   { value: 'hospedagem', keywords: ['pousada', 'hotel', 'hospedagem'] }
 ];
@@ -120,7 +198,7 @@ export async function generateAIResponse(
       });
     }
 
-    const recentHistory = conversationHistory.slice(-10);
+    const recentHistory = conversationHistory.slice(-6);
     messages.push(...recentHistory);
 
     messages.push({
@@ -129,25 +207,34 @@ export async function generateAIResponse(
     });
 
     const groq = getGroq();
-    const completion = await groq.chat.completions.create({
-      model: REASONING_MODEL,
-      messages,
-      temperature: 0.65,
-      max_tokens: 520,
-      top_p: 0.9
-    });
+    const completion = await withGroqRetry(() =>
+      groq.chat.completions.create({
+        model: REASONING_MODEL,
+        messages,
+        temperature: 0.65,
+        max_tokens: 420,
+        top_p: 0.9
+      })
+    );
 
     const response = completion.choices[0]?.message?.content ||
       'Opa, falhou aqui! Me manda de novo? 😅';
 
     return response.trim();
   } catch (error) {
+    const status = getErrorStatus(error);
+    if (status === 429) {
+      return 'Tô com muita demanda aqui 😅\nPode tentar de novo em 20s?';
+    }
     console.error('Erro Groq:', error);
     return 'Ops, minha conexão oscilou 😔\nMas não desiste de mim! Pode repetir?';
   }
 }
 
-export async function detectIntentWithAI(message: string): Promise<{
+export async function detectIntentWithAI(
+  message: string,
+  options: { mode?: 'auto' | 'ai' | 'heuristic' } = {}
+): Promise<{
   intent: string;
   confidence: number;
   entities: any;
@@ -161,17 +248,32 @@ export async function detectIntentWithAI(message: string): Promise<{
     };
   }
 
+  const mode = options.mode || 'auto';
+
+  if (mode === 'heuristic') {
+    return fallbackIntent(trimmed);
+  }
+
+  if (mode === 'auto') {
+    const heuristic = fallbackIntent(trimmed);
+    if (heuristic.intent !== 'duvida' && heuristic.intent !== 'desconhecido') {
+      return heuristic;
+    }
+  }
+
   try {
     const groq = getGroq();
-    const completion = await groq.chat.completions.create({
-      model: INTENT_MODEL,
-      messages: [
-        { role: 'system', content: INTENT_SYSTEM_PROMPT },
-        { role: 'user', content: trimmed }
-      ],
-      temperature: 0.2,
-      max_tokens: 220
-    });
+    const completion = await withGroqRetry(() =>
+      groq.chat.completions.create({
+        model: INTENT_MODEL,
+        messages: [
+          { role: 'system', content: INTENT_SYSTEM_PROMPT },
+          { role: 'user', content: trimmed }
+        ],
+        temperature: 0.2,
+        max_tokens: 220
+      })
+    );
 
     const content = completion.choices[0]?.message?.content ?? undefined;
     const parsed = parseIntentResponse(content);
@@ -179,7 +281,10 @@ export async function detectIntentWithAI(message: string): Promise<{
       return sanitizeIntentPayload(parsed, trimmed);
     }
   } catch (error) {
-    console.error('Erro detectIntent:', error);
+    const status = getErrorStatus(error);
+    if (status !== 429) {
+      console.error('Erro detectIntent:', error);
+    }
   }
 
   return fallbackIntent(trimmed);
@@ -203,7 +308,11 @@ function sanitizeIntentPayload(payload: any, originalMessage: string) {
   const intentRaw = typeof payload?.intent === 'string' ? payload.intent.toLowerCase() : 'desconhecido';
   const intent = ALLOWED_INTENTS.has(intentRaw) ? intentRaw : 'desconhecido';
   const entities = payload?.entities || {};
-  const passeio = entities.passeio || detectPasseioKeyword(originalMessage);
+  const passeioFromModel = typeof entities.passeio === 'string' ? entities.passeio : undefined;
+  const passeioDetected = detectPasseioKeyword(originalMessage);
+  const passeio = passeioFromModel === 'barco' && passeioDetected && passeioDetected !== 'barco'
+    ? passeioDetected
+    : passeioFromModel || passeioDetected;
   const numFromModel = typeof entities.numPessoas === 'number' ? entities.numPessoas : parseNumber(entities.numPessoas);
   const extractedNum = Number.isFinite(numFromModel) ? numFromModel : extractNumPessoas(originalMessage);
   const extractedDate = entities.data && typeof entities.data === 'string' && entities.data.trim()
@@ -256,6 +365,19 @@ function fallbackIntent(message: string) {
     };
   }
 
+  if (matches(text, ['quero reservar', 'fazer reserva', 'fechar', 'confirmar passeio', 'pode reservar', 'reservar'])) {
+    return {
+      intent: 'reserva',
+      confidence: 0.78,
+      entities: {
+        passeio: detectPasseioKeyword(text),
+        numPessoas: extractNumPessoas(text),
+        data: extractDate(text),
+        nome: extractName(text)
+      }
+    };
+  }
+
   if (matches(text, ['preço', 'valor', 'quanto', 'quanto sai', 'tabela'])) {
     return {
       intent: 'preco',
@@ -275,19 +397,6 @@ function fallbackIntent(message: string) {
     };
   }
 
-  if (matches(text, ['quero reservar', 'fazer reserva', 'fechar', 'confirmar passeio', 'pode reservar'])) {
-    return {
-      intent: 'reserva',
-      confidence: 0.78,
-      entities: {
-        passeio: detectPasseioKeyword(text),
-        numPessoas: extractNumPessoas(text),
-        data: extractDate(text),
-        nome: extractName(text)
-      }
-    };
-  }
-
   return {
     intent: 'duvida',
     confidence: 0.5,
@@ -304,12 +413,20 @@ function matches(text: string, patterns: string[]) {
 }
 
 function detectPasseioKeyword(text: string) {
+  const normalized = normalizeLoose(text);
   for (const item of PASSEIO_KEYWORDS) {
-    if (item.keywords.some(keyword => text.includes(keyword))) {
+    if (item.keywords.some(keyword => normalized.includes(normalizeLoose(keyword)))) {
       return item.value;
     }
   }
   return undefined;
+}
+
+function normalizeLoose(value: string) {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
 }
 
 function parseNumber(value: any) {
@@ -372,4 +489,105 @@ function extractName(text: string) {
 function capitalize(value: string) {
   if (!value) return value;
   return value.split(' ').map(part => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()).join(' ');
+}
+
+export async function generateVoucherMessage(data: {
+  voucherCode: string;
+  clienteNome: string;
+  passeioNome: string;
+  dataPasseio: string;
+  horario?: string;
+  numPessoas: number;
+  valorTotal?: number;
+  pontoEncontro?: string;
+  pagamento?: {
+    metodo: 'pix' | 'boleto';
+    invoiceUrl?: string;
+    pixCopiaECola?: string;
+    boletoUrl?: string;
+    vencimento?: string;
+  };
+}): Promise<string> {
+  const payload = {
+    voucher: data.voucherCode,
+    cliente: data.clienteNome,
+    passeio: data.passeioNome,
+    data: data.dataPasseio,
+    horario: data.horario || 'a confirmar',
+    pessoas: data.numPessoas,
+    valorTotal: typeof data.valorTotal === 'number' ? Number(data.valorTotal.toFixed(2)) : undefined,
+    pontoEncontro: data.pontoEncontro || 'a confirmar',
+    pagamento: data.pagamento
+  };
+
+  const system = `Você é a Ana (Caleb's Tour) no WhatsApp. Gere uma mensagem de confirmação (voucher) curta, carioca e humanizada.
+Regras:
+- Use APENAS os dados do JSON do usuário (não invente valores, horários, links).
+- Se faltar algo, escreva "a confirmar".
+- Use formatação do WhatsApp (negrito com *texto*). NÃO use markdown com **.
+- Inclua sempre (se existir no JSON): voucher, passeio, data, horário, pessoas, ponto de encontro e valor total.
+- Se existir pagamento, inclua método e link (invoiceUrl/boletoUrl).
+- A ÚLTIMA LINHA deve ser uma pergunta e deve terminar com "?" (sem emoji depois).
+- 6 a 10 linhas no máximo.`;
+
+  const groq = getGroq();
+  const completion = await withGroqRetry(() =>
+    groq.chat.completions.create({
+      model: REASONING_MODEL,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: JSON.stringify(payload) }
+      ],
+      temperature: 0.25,
+      max_tokens: 520,
+      top_p: 0.9
+    })
+  );
+
+  const response = completion.choices[0]?.message?.content || '';
+  return response.trim();
+}
+
+export async function generatePriceMessage(data: {
+  passeioNome: string;
+  precoMin?: number;
+  precoMax?: number;
+  duracao?: string;
+  local?: string;
+  userName?: string;
+}): Promise<string> {
+  const payload = {
+    passeio: data.passeioNome,
+    precoMin: typeof data.precoMin === 'number' ? Number(data.precoMin.toFixed(2)) : undefined,
+    precoMax: typeof data.precoMax === 'number' ? Number(data.precoMax.toFixed(2)) : undefined,
+    duracao: data.duracao,
+    local: data.local
+  };
+
+  const name = data.userName ? data.userName.split(' ')[0] : undefined;
+
+  const system = `Você é a Ana (Caleb's Tour) no WhatsApp. Responda curto, carioca e humano.
+Regras:
+- Use APENAS os dados do JSON do usuário (não invente preços).
+- NÃO diga "por pessoa"/"por casal"/"por máquina" a menos que isso esteja explicitamente no JSON.
+- Se tiver faixa (min/max diferentes), diga a faixa.
+- Se só tiver um valor, diga só o valor.
+- Termine perguntando data e número de pessoas pra avançar.`;
+
+  const groq = getGroq();
+  const completion = await withGroqRetry(() =>
+    groq.chat.completions.create({
+      model: REASONING_MODEL,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: name ? `${name}: ${JSON.stringify(payload)}` : JSON.stringify(payload) }
+      ],
+      temperature: 0.55,
+      max_tokens: 260,
+      top_p: 0.9
+    })
+  );
+
+  const response = completion.choices[0]?.message?.content || '';
+  return response.trim();
 }
