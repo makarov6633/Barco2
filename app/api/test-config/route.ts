@@ -34,6 +34,9 @@ export async function GET(req: NextRequest) {
         serviceKey: {
           configured: !!process.env.SUPABASE_SERVICE_ROLE_KEY
         }
+      },
+      admin: {
+        tokenConfigured: !!process.env.ADMIN_TOKEN
       }
     }
   };
