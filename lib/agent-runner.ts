@@ -29,8 +29,13 @@ function extractEmail(message: string) {
 function detectPaymentType(message: string): PaymentType | undefined {
   const t = normalizeString(message);
   if (!t) return undefined;
-  if (t.includes('boleto')) return 'BOLETO';
-  if (t.includes('pix')) return 'PIX';
+
+  const compact = t.replace(/\s+/g, '');
+
+  if (compact.includes('boleto') || compact === 'bol' || compact === 'bolet') return 'BOLETO';
+
+  if (compact.includes('pix') || /^p?ix$/.test(compact)) return 'PIX';
+
   return undefined;
 }
 
