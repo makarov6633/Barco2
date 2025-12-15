@@ -3,6 +3,7 @@ import {
   createCobranca,
   createReserva,
   generateVoucherCode,
+  getAllKnowledgeChunks,
   getAllPasseios,
   getClienteById,
   getOrCreateCliente,
@@ -10,17 +11,20 @@ import {
   getPendingCobrancaByReservaId,
   getReservaById,
   getReservaByVoucher,
+  KnowledgeChunk,
   updateReservaStatus
 } from './supabase';
 import {
   createBoletoPayment,
   createPixPayment,
-  findOrCreateCustomer
+  findOrCreateCustomer,
+  getAsaasPayment
 } from './asaas';
 
 export type ToolName =
   | 'consultar_passeios'
   | 'buscar_passeio_especifico'
+  | 'consultar_conhecimento'
   | 'criar_reserva'
   | 'gerar_pagamento'
   | 'gerar_voucher'
@@ -40,6 +44,11 @@ export function getToolsForPrompt() {
     {
       name: 'buscar_passeio_especifico',
       description: 'Busca um passeio específico por nome/categoria e retorna as melhores correspondências.',
+      params: { termo: 'string (obrigatório)' }
+    },
+    {
+      name: 'consultar_conhecimento',
+      description: 'Busca informações oficiais (FAQ/políticas/logística) na base knowledge_chunks do Supabase.',
       params: { termo: 'string (obrigatório)' }
     },
     {
@@ -171,29 +180,102 @@ function getMissing(fields: Array<[string, any]>) {
   return fields.filter(([, v]) => v == null || v === '' || (typeof v === 'number' && !Number.isFinite(v))).map(([k]) => k);
 }
 
-function bestPasseioMatches(passeios: any[], term: string) {
-  const q = normalizeString(term);
-  if (!q) return [];
+function bestPasseioMatchesScored(passeios: any[], term: string) {
+  const query = normalizeString(term);
+  if (!query) {
+    return { query, tokens: [] as string[], results: [] as Array<{ p: any; score: number; hits: number }> };
+  }
 
-  const tokens = Array.from(new Set(q.split(' ').filter(t => t.length >= 3)));
+  const tokens = Array.from(new Set(query.split(' ').filter(t => t.length >= 3)));
 
-  const scored = passeios
+  const results = passeios
     .map(p => {
       const hay = normalizeString(`${p.nome} ${p.categoria || ''} ${p.local || ''} ${p.descricao || ''}`);
       let hits = 0;
       for (const t of tokens) {
         if (hay.includes(t)) hits += 1;
       }
-      const exactIdx = hay.indexOf(q);
+      const exactIdx = hay.indexOf(query);
       const score = hits * 100 + (exactIdx === -1 ? 0 : 50) + (exactIdx === -1 ? 0 : Math.max(0, 30 - exactIdx));
       return { p, score, hits };
     })
     .filter(x => x.hits > 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, 5)
-    .map(x => x.p);
+    .slice(0, 5);
+
+  return { query, tokens, results };
+}
+
+function bestPasseioMatches(passeios: any[], term: string) {
+  return bestPasseioMatchesScored(passeios, term).results.map(x => x.p);
+}
+
+let cachedKnowledgeChunks: KnowledgeChunk[] | null = null;
+let cachedKnowledgeAt = 0;
+const KNOWLEDGE_CACHE_TTL = 5 * 60 * 1000;
+
+async function getKnowledgeChunksCached(): Promise<KnowledgeChunk[]> {
+  const now = Date.now();
+  if (cachedKnowledgeChunks && (now - cachedKnowledgeAt) < KNOWLEDGE_CACHE_TTL) {
+    return cachedKnowledgeChunks;
+  }
+  cachedKnowledgeChunks = await getAllKnowledgeChunks();
+  cachedKnowledgeAt = now;
+  return cachedKnowledgeChunks;
+}
+
+function bestKnowledgeMatches(chunks: KnowledgeChunk[], term: string, limit = 5): KnowledgeChunk[] {
+  const q = normalizeString(term);
+  if (!q) return [];
+
+  const tokens = Array.from(new Set(q.split(' ').filter(t => t.length >= 3)));
+
+  const scored = chunks
+    .map((c) => {
+      const hay = normalizeString(`${c.title} ${c.slug} ${(c.tags || []).join(' ')} ${c.content}`);
+      let hits = 0;
+      for (const t of tokens) {
+        if (hay.includes(t)) hits += 1;
+      }
+      const exactIdx = hay.indexOf(q);
+      const score = hits * 100 + (exactIdx === -1 ? 0 : 40) + (exactIdx === -1 ? 0 : Math.max(0, 20 - exactIdx));
+      return { c, score, hits };
+    })
+    .filter(x => x.hits > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, Math.max(1, limit))
+    .map(x => x.c);
 
   return scored;
+}
+
+function extractHorariosList(raw?: string): string[] {
+  const text = String(raw ?? '').trim();
+  if (!text) return [];
+
+  const regex = /\b([01]?\d|2[0-3])\s*(?:[:h]\s*([0-5]\d))\b/gim;
+  const times: string[] = [];
+
+  for (const match of text.matchAll(regex)) {
+    const h = String(parseInt(match[1], 10)).padStart(2, '0');
+    const m = String(match[2]).padStart(2, '0');
+    times.push(`${h}:${m}`);
+  }
+
+  return Array.from(new Set(times));
+}
+
+function formatHorariosForVoucher(raw?: string): string {
+  const times = extractHorariosList(raw);
+  if (times.length === 1) return times[0];
+  if (times.length > 1) return times.join(' ou ');
+  const fallback = String(raw ?? '').trim();
+  return fallback || 'A confirmar';
+}
+
+function formatPontoEncontro(raw?: string): string {
+  const trimmed = String(raw ?? '').trim();
+  return trimmed || 'A confirmar';
 }
 
 function requireSafeToChargeLive() {
@@ -215,6 +297,30 @@ function requireSafeToChargeLive() {
 
 export async function executeTool(name: ToolName, params: any, ctx: { telefone: string; conversation: ConversationContext }): Promise<ToolResult> {
   try {
+    if (name === 'consultar_conhecimento') {
+      const termo = typeof params?.termo === 'string'
+        ? params.termo
+        : String(params?.query ?? params?.pergunta ?? params?.assunto ?? '').trim();
+
+      if (!termo) {
+        return { success: false, error: { code: 'missing_term', message: 'Parâmetro termo é obrigatório.', missing: ['termo'] } };
+      }
+
+      const chunks = await getKnowledgeChunksCached();
+      const matches = bestKnowledgeMatches(chunks, termo, 5);
+
+      return {
+        success: true,
+        data: matches.map((c) => ({
+          slug: c.slug,
+          title: c.title,
+          content: c.content ? String(c.content).slice(0, 1400) : '',
+          source: c.source || null,
+          tags: Array.isArray(c.tags) ? c.tags : null
+        }))
+      };
+    }
+
     if (name === 'consultar_passeios') {
       const termo = typeof params?.termo === 'string' ? params.termo : undefined;
       const passeios = await getAllPasseios();
@@ -301,20 +407,36 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
       }
 
       if (!passeio && passeioTerm) {
-        const matches = bestPasseioMatches(passeios, passeioTerm);
-        if (matches.length === 1) passeio = matches[0];
+        const scored = bestPasseioMatchesScored(passeios, passeioTerm);
+        const matches = scored.results;
+
+        if (matches.length === 1) passeio = matches[0].p;
+
         if (!passeio && matches.length > 1) {
-          return {
-            success: false,
-            error: {
-              code: 'ambiguous_passeio',
-              message: 'Encontrei mais de um passeio possível para esse termo.',
-              details: {
-                termo: passeioTerm,
-                sugestoes: matches.map(p => ({ id: p.id, nome: p.nome, categoria: p.categoria, preco_min: p.preco_min != null ? Number(p.preco_min) : null, preco_max: p.preco_max != null ? Number(p.preco_max) : null }))
+          const best = matches[0];
+          const second = matches[1];
+
+          const shouldAutoPick =
+            scored.tokens.length >= 2 &&
+            best &&
+            second &&
+            best.hits >= (second.hits + 1);
+
+          if (shouldAutoPick) {
+            passeio = best.p;
+          } else {
+            return {
+              success: false,
+              error: {
+                code: 'ambiguous_passeio',
+                message: 'Encontrei mais de um passeio possível para esse termo.',
+                details: {
+                  termo: passeioTerm,
+                  sugestoes: matches.map(m => ({ id: m.p.id, nome: m.p.nome, categoria: m.p.categoria, preco_min: m.p.preco_min != null ? Number(m.p.preco_min) : null, preco_max: m.p.preco_max != null ? Number(m.p.preco_max) : null }))
+                }
               }
-            }
-          };
+            };
+          }
         }
       }
 
@@ -368,11 +490,9 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
       return {
         success: true,
         data: {
-          reserva_id: reserva.id,
-          voucher_code: voucherCode,
+          status: 'PENDENTE',
           valor_total: Number(valorTotal.toFixed(2)),
           passeio_nome: passeio.nome,
-          passeio_id: passeio.id,
           data: dataISO,
           num_pessoas: numPessoas,
           preco_min: precoMin != null ? Number(precoMin) : null,
@@ -422,6 +542,12 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
           }
         };
       }
+
+      const includePixPayload =
+        params?.incluir_pix === true ||
+        params?.include_pix === true ||
+        params?.incluir_copia_cola === true ||
+        String(params?.incluir_pix ?? params?.include_pix ?? params?.incluir_copia_cola ?? '').toLowerCase() === 'true';
 
       ctx.conversation.tempData ||= {};
       if (cpfDigits) ctx.conversation.tempData.cpf = cpfDigits;
@@ -476,9 +602,7 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
         return {
           success: true,
           data: {
-            reserva_id: reservaId,
             status: 'CONFIRMADO',
-            voucher_code: reserva.voucher,
             message: 'Reserva já está confirmada.'
           }
         };
@@ -486,18 +610,37 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
 
       const cobrancaExistente = await getPendingCobrancaByReservaId(reservaId, tipo);
       if (cobrancaExistente) {
+        let invoiceUrl: string | null = null;
+        if (cobrancaExistente.asaas_id) {
+          try {
+            const payment = await getAsaasPayment(cobrancaExistente.asaas_id);
+            invoiceUrl = payment?.invoiceUrl || null;
+          } catch {
+            invoiceUrl = null;
+          }
+        }
+
         return {
           success: true,
           data: {
-            reserva_id: reservaId,
-            cobranca_id: cobrancaExistente.id,
-            asaas_id: cobrancaExistente.asaas_id,
+            status: cobrancaExistente.status,
             tipo: cobrancaExistente.tipo,
             valor: cobrancaExistente.valor,
-            pix_copiacola: cobrancaExistente.pix_copiacola,
-            boleto_url: cobrancaExistente.boleto_url,
             vencimento: cobrancaExistente.vencimento,
-            status: cobrancaExistente.status
+            pix:
+              cobrancaExistente.tipo === 'PIX'
+                ? {
+                    link: invoiceUrl,
+                    copia_cola: includePixPayload ? cobrancaExistente.pix_copiacola : undefined
+                  }
+                : undefined,
+            boleto:
+              cobrancaExistente.tipo === 'BOLETO'
+                ? {
+                    url: cobrancaExistente.boleto_url,
+                    vencimento: cobrancaExistente.vencimento
+                  }
+                : undefined
           }
         };
       }
@@ -539,20 +682,27 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
           return { success: false, error: { code: 'cobranca_save_failed', message: 'Erro ao salvar cobrança.' } };
         }
 
+        if (ctx.conversation.tempData) {
+          delete ctx.conversation.tempData.cpf;
+          delete ctx.conversation.tempData.email;
+        }
+
+        const expiracao =
+          pixQrCode.expirationDate ||
+          payment.dueDate ||
+          new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
         return {
           success: true,
           data: {
-            reserva_id: reservaId,
-            cobranca_id: saved.id,
-            asaas_id: payment.id,
+            status: 'PENDENTE',
             tipo: 'PIX',
             valor: valor,
+            vencimento: saved.vencimento,
             pix: {
-              copia_cola: pixQrCode.payload,
-              expiracao:
-                pixQrCode.expirationDate ||
-                payment.dueDate ||
-                new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+              link: payment.invoiceUrl || null,
+              copia_cola: includePixPayload ? pixQrCode.payload : undefined,
+              expiracao
             }
           }
         };
@@ -582,19 +732,27 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
         return { success: false, error: { code: 'cobranca_save_failed', message: 'Erro ao salvar boleto.' } };
       }
 
+      if (ctx.conversation.tempData) {
+        delete ctx.conversation.tempData.cpf;
+        delete ctx.conversation.tempData.email;
+      }
+
+      const vencimento =
+        payment.dueDate ||
+        saved.vencimento ||
+        new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
       return {
         success: true,
         data: {
-          reserva_id: reservaId,
-          cobranca_id: saved.id,
-          asaas_id: payment.id,
+          status: 'PENDENTE',
           tipo: 'BOLETO',
           valor: valor,
+          vencimento: saved.vencimento,
           boleto: {
             url: payment.bankSlipUrl,
-            vencimento:
-              payment.dueDate ||
-              new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+            link: payment.invoiceUrl || null,
+            vencimento
           }
         }
       };
@@ -628,7 +786,6 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
         return {
           success: true,
           data: {
-            reserva_id: reserva.id,
             status: 'CANCELADO',
             voucher_code: reserva.voucher,
             message: 'Reserva já estava cancelada.'
@@ -644,7 +801,6 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
       return {
         success: true,
         data: {
-          reserva_id: reserva.id,
           status: 'CANCELADO',
           voucher_code: reserva.voucher
         }
@@ -678,15 +834,14 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
       return {
         success: true,
         data: {
-          reserva_id: reservaId,
           voucher_code: reserva.voucher,
           cliente_nome: cliente.nome,
           passeio_nome: passeio?.nome || 'Passeio',
           data: reserva.data_passeio,
-          horario: '09:00',
+          horario: formatHorariosForVoucher(passeio?.horarios),
           num_pessoas: reserva.num_pessoas,
           valor_total: Number(reserva.valor_total),
-          ponto_encontro: passeio?.local || 'Cais da Praia dos Anjos'
+          ponto_encontro: formatPontoEncontro(passeio?.local)
         }
       };
     }

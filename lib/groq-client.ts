@@ -21,7 +21,7 @@ export async function groqChat(params: {
     model: params.model || process.env.GROQ_REASONING_MODEL || 'openai/gpt-oss-120b',
     messages: params.messages,
     temperature: params.temperature ?? 0.4,
-    max_tokens: params.max_tokens ?? 700,
+    max_tokens: params.max_tokens ?? 450,
     top_p: params.top_p ?? 0.9
   });
 

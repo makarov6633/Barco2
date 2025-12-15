@@ -31,6 +31,35 @@ function isAuthorized(req: NextRequest) {
   return !!provided && provided === expected;
 }
 
+function extractHorariosList(raw?: string): string[] {
+  const text = String(raw ?? '').trim();
+  if (!text) return [];
+
+  const regex = /\b([01]?\d|2[0-3])\s*(?:[:h]\s*([0-5]\d))\b/gim;
+  const times: string[] = [];
+
+  for (const match of text.matchAll(regex)) {
+    const h = String(parseInt(match[1], 10)).padStart(2, '0');
+    const m = String(match[2]).padStart(2, '0');
+    times.push(`${h}:${m}`);
+  }
+
+  return Array.from(new Set(times));
+}
+
+function formatHorariosForVoucher(raw?: string): string {
+  const times = extractHorariosList(raw);
+  if (times.length === 1) return times[0];
+  if (times.length > 1) return times.join(' ou ');
+  const fallback = String(raw ?? '').trim();
+  return fallback || 'A confirmar';
+}
+
+function formatPontoEncontro(raw?: string): string {
+  const trimmed = String(raw ?? '').trim();
+  return trimmed || 'A confirmar';
+}
+
 export async function POST(req: NextRequest) {
   try {
     if (!isAuthorized(req)) {
@@ -82,10 +111,10 @@ export async function POST(req: NextRequest) {
           clienteNome: cliente.nome,
           passeioNome: passeio?.nome || 'Passeio',
           data: reserva.data_passeio,
-          horario: '09:00',
+          horario: formatHorariosForVoucher(passeio?.horarios),
           numPessoas: reserva.num_pessoas,
           valorTotal: Number(reserva.valor_total),
-          pontoEncontro: passeio?.local || 'Cais da Praia dos Anjos'
+          pontoEncontro: formatPontoEncontro(passeio?.local)
         });
 
         const whatsappTo = cliente.telefone.startsWith('whatsapp:')

@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 
-dotenv.config({ path: '/project/workspace/.env.local' });
-dotenv.config({ path: '/project/workspace/makarov6633/Barco2/.env.local' });
+dotenv.config({ path: '/project/workspace/.env.local', override: true });
+dotenv.config({ path: '/project/workspace/makarov6633/Barco2/.env.local', override: true });
 
 import {
   buildDefaultDueDate,

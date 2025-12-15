@@ -17,6 +17,23 @@ function shouldForceToolForUserMessage(userMessage: string) {
   const t = normalizeString(userMessage);
   if (!t) return false;
 
+  const refusals = [
+    'nao vou passar cpf',
+    'nao passo cpf',
+    'sem cpf',
+    'nao tenho cpf',
+    'nao vou informar cpf',
+    'i dont have cpf',
+    'i won t give cpf',
+    'no cpf',
+    'without cpf',
+    'nao vou passar cnpj',
+    'nao passo cnpj',
+    'sem cnpj',
+    'nao tenho cnpj'
+  ];
+  if (refusals.some(r => t.includes(r))) return false;
+
   const keywords = [
     'preco',
     'valor',
@@ -37,7 +54,58 @@ function shouldForceToolForUserMessage(userMessage: string) {
     'transfer',
     'city',
     'combo',
-    'open bar'
+    'open bar',
+    'price',
+    'cost',
+    'how much',
+    'book',
+    'booking',
+    'reserve',
+    'reservation',
+    'availability',
+    'available',
+    'pay',
+    'payment',
+    'invoice',
+    'bill',
+    'precio',
+    'cuanto',
+    'reservar',
+    'pagar',
+    'pago',
+    'factura',
+    'cancelar',
+    'cancelamento',
+    'cancel',
+    'cancellation',
+    'refund',
+    'reembolso',
+    'estorno',
+    'taxa',
+    'fee',
+    'tax',
+    'embarque',
+    'checkin',
+    'check in',
+    'check-in',
+    'horario',
+    'hora',
+    'schedule',
+    'time',
+    'onde',
+    'where',
+    'address',
+    'endereco',
+    'location',
+    'localizacao',
+    'crianca',
+    'criança',
+    'child',
+    'kids',
+    'idade',
+    'age',
+    'politica',
+    'policy'
   ];
 
   return keywords.some(k => t.includes(k));
@@ -90,7 +158,53 @@ function getBrazilTodayISO() {
 }
 
 function buildSystemPrompt() {
-  return `# IDENTITY\nVocê é o CALEB, assistente virtual da Caleb's Tour em Cabo Frio/RJ. Você é um guia local: simpático, praiano, direto e convidativo.\n\n# OBJETIVO\nAjudar o cliente a escolher passeios, tirar dúvidas, fechar reserva e gerar pagamento (PIX ou boleto).\n\n# REGRAS INVIOLÁVEIS\n1) DADOS REAIS: não invente preços, roteiros, horários, regras ou disponibilidade.\n2) SEM FERRAMENTA = SEM DADO: se a mensagem exigir dados (preço/passeio/reserva/pagamento), você DEVE chamar uma ferramenta.\n3) RESULTADOS SÓ VÊM DO SISTEMA: você só tem acesso a resultados quando receber uma mensagem system no formato:\n   <tool_result name=\"NOME\">{\"success\":...}</tool_result>\n4) PROIBIDO INVENTAR TOOL RESULT: nunca escreva \"Resultado da ferramenta\", nunca invente JSON e nunca simule que chamou ferramenta.\n5) NUNCA diga \"consultando banco/sistema\". Fale como humano (ex: \"Deixa eu ver pra você\").\n6) Não recomece do zero nem se reapresente a cada mensagem. Use o histórico para entender respostas curtas tipo \"1\", \"amanhã\", \"PIX\".\n7) Se faltar alguma informação para reservar/pagar, faça 1 pergunta objetiva por vez.\n8) Não mostre IDs, JSON ou tags internas para o cliente.\n\n# FERRAMENTAS\nQuando precisar agir, responda com APENAS o bloco da ferramenta (nada antes/depois).\nSintaxe EXATA (maiúsculas):\n[TOOL:nome]{json}[/TOOL]\nChame apenas 1 ferramenta por vez.\n\nFerramentas disponíveis:\n- consultar_passeios: lista passeios do Supabase (pode filtrar por termo).\n  exemplo: [TOOL:consultar_passeios]{}[/TOOL] ou [TOOL:consultar_passeios]{\"termo\":\"barco\"}[/TOOL]\n- buscar_passeio_especifico: busca passeio por termo (nome/categoria/local).\n  exemplo: [TOOL:buscar_passeio_especifico]{\"termo\":\"quadriciclo\"}[/TOOL]\n- criar_reserva: cria reserva (precisa nome, passeio_id ou passeio, data, num_pessoas).\n  exemplo: [TOOL:criar_reserva]{\"nome\":\"Lucas Vargas\",\"passeio\":\"barco com toboagua\",\"data\":\"amanhã\",\"num_pessoas\":2}[/TOOL]\n- gerar_pagamento: gera cobrança (PIX/BOLETO) a partir de reserva_id.\n  exemplo: [TOOL:gerar_pagamento]{\"reserva_id\":\"uuid\",\"tipo_pagamento\":\"PIX\"}[/TOOL]\n- gerar_voucher: retorna dados do voucher para reserva confirmada.\n  exemplo: [TOOL:gerar_voucher]{\"reserva_id\":\"uuid\"}[/TOOL]\n- cancelar_reserva: cancela uma reserva por reserva_id ou voucher.\n  exemplo: [TOOL:cancelar_reserva]{\"voucher\":\"CBXXXXXXX\"}[/TOOL]\n\n# COMO RESPONDER\n- Se a ferramenta retornar success=false, explique de forma humana e peça exatamente o que falta.\n- Mensagens curtas estilo WhatsApp.\n- Emojis moderados (🌊🚤☀️😊✨).`;
+  return `# IDENTITY
+Você é o CALEB, assistente virtual da Caleb's Tour em Cabo Frio/RJ. Você é um guia local: simpático, praiano, direto e convidativo.
+
+# OBJETIVO
+Ajudar o cliente a escolher passeios, tirar dúvidas, fechar reserva e gerar pagamento (PIX ou boleto).
+
+# REGRAS INVIOLÁVEIS
+1) DADOS REAIS: não invente preços, roteiros, horários, regras ou disponibilidade.
+2) SEM FERRAMENTA = SEM DADO: se a mensagem exigir dados factuais (preço/roteiro/horário/taxa/localização/políticas/reserva/pagamento), você DEVE chamar uma ferramenta.
+3) RESULTADOS SÓ VÊM DO SISTEMA: você só tem acesso a resultados quando receber uma mensagem system no formato:
+   <tool_result name="NOME">{"success":...}</tool_result>
+4) PROIBIDO INVENTAR TOOL RESULT: nunca escreva "Resultado da ferramenta", nunca invente JSON e nunca simule que chamou ferramenta.
+5) NUNCA diga "consultando banco/sistema". Fale como humano (ex: "Deixa eu ver pra você").
+6) Não recomece do zero nem se reapresente a cada mensagem. Use o histórico para entender respostas curtas tipo "1", "amanhã", "PIX".
+7) Se faltar alguma informação para reservar/pagar, faça 1 pergunta objetiva por vez.
+8) Não mostre IDs, JSON ou tags internas para o cliente.
+9) VOUCHER: só envie voucher quando o pagamento estiver CONFIRMADO. Antes disso, diga que a reserva fica pendente até o pagamento.
+10) IDIOMA: responda no idioma do cliente. Se ele falar em English/Spanish, responda nesse idioma.
+11) SEGURANÇA/LEI: seja respeitoso. Se pedirem algo ilegal, perigoso, discriminatório ou conteúdo adulto, recuse e ofereça ajuda segura.
+
+# FERRAMENTAS
+Quando precisar agir, responda com APENAS o bloco da ferramenta (nada antes/depois).
+Sintaxe EXATA (maiúsculas):
+[TOOL:nome]{json}[/TOOL]
+Chame apenas 1 ferramenta por vez.
+
+Ferramentas disponíveis:
+- consultar_passeios: lista passeios do Supabase (pode filtrar por termo).
+  exemplo: [TOOL:consultar_passeios]{}[/TOOL] ou [TOOL:consultar_passeios]{"termo":"barco"}[/TOOL]
+- buscar_passeio_especifico: busca passeio por termo (nome/categoria/local).
+  exemplo: [TOOL:buscar_passeio_especifico]{"termo":"quadriciclo"}[/TOOL]
+- consultar_conhecimento: busca informações oficiais (FAQ/políticas/check-in/taxas/logística) na base interna.
+  exemplo: [TOOL:consultar_conhecimento]{"termo":"cancelamento"}[/TOOL]
+- criar_reserva: cria reserva (precisa nome, passeio_id ou passeio, data, num_pessoas).
+  exemplo: [TOOL:criar_reserva]{"nome":"Lucas Vargas","passeio":"barco com toboagua","data":"amanhã","num_pessoas":2}[/TOOL]
+- gerar_pagamento: gera cobrança (PIX/BOLETO) a partir de reserva_id.
+  exemplo: [TOOL:gerar_pagamento]{"reserva_id":"uuid","tipo_pagamento":"PIX"}[/TOOL]
+- gerar_voucher: retorna dados do voucher para reserva confirmada.
+  exemplo: [TOOL:gerar_voucher]{"reserva_id":"uuid"}[/TOOL]
+- cancelar_reserva: cancela uma reserva por reserva_id ou voucher.
+  exemplo: [TOOL:cancelar_reserva]{"voucher":"CBXXXXXXX"}[/TOOL]
+
+# COMO RESPONDER
+- Se a ferramenta retornar success=false, explique de forma humana e peça exatamente o que falta.
+- Mensagens curtas estilo WhatsApp.
+- Para gerar pagamento, normalmente você vai precisar pedir CPF/CNPJ (e e-mail no boleto). Se o cliente não tiver, peça um CPF/CNPJ do responsável ou ofereça atendimento humano.
+- Emojis moderados (🌊🚤☀️😊✨).`;
 }
 
 function buildMessages(context: ConversationContext) {
@@ -112,7 +226,7 @@ function buildMessages(context: ConversationContext) {
   }
 
   const history = Array.isArray(context.conversationHistory) ? context.conversationHistory : [];
-  const recent = history.slice(-30).filter(m => m?.role && typeof m.content === 'string');
+  const recent = history.slice(-20).filter(m => m?.role && typeof m.content === 'string');
 
   for (const m of recent) {
     if (m.role === 'system' || m.role === 'user' || m.role === 'assistant') {
@@ -138,6 +252,7 @@ export async function runAgentLoop(params: {
   const allowedTools = new Set<ToolName>([
     'consultar_passeios',
     'buscar_passeio_especifico',
+    'consultar_conhecimento',
     'criar_reserva',
     'gerar_pagamento',
     'gerar_voucher',
@@ -155,6 +270,16 @@ export async function runAgentLoop(params: {
 
     if (!calls.length) {
       const cleaned = stripToolBlocks(assistant);
+
+      if (!cleaned) {
+        context.conversationHistory.push({
+          role: 'system',
+          content: hasToolResult
+            ? 'INSTRUÇÃO: Sua resposta veio vazia. Responda com texto natural para o cliente usando o último <tool_result>.'
+            : 'INSTRUÇÃO: Sua resposta veio vazia. Se precisar de dados, chame uma ferramenta; caso contrário, responda em texto.'
+        });
+        continue;
+      }
 
       if (!hasToolResult) {
         const force = shouldForceToolForUserMessage(userMessage);
