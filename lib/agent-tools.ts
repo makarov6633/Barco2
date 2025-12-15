@@ -521,6 +521,54 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
       const reservaId = String(params?.reserva_id ?? params?.reservaId ?? ctx.conversation.tempData?.reservaId ?? '').trim();
       const tipo = pickPaymentType(params);
 
+      const includePixPayload =
+        params?.incluir_pix === true ||
+        params?.include_pix === true ||
+        params?.incluir_copia_cola === true ||
+        String(params?.incluir_pix ?? params?.include_pix ?? params?.incluir_copia_cola ?? '').toLowerCase() === 'true';
+
+      if (!reservaId) {
+        return { success: false, error: { code: 'missing_fields', message: 'Faltam dados para gerar pagamento.', missing: ['reserva_id'] } };
+      }
+
+      const cobrancaExistente = await getPendingCobrancaByReservaId(reservaId, tipo);
+      if (cobrancaExistente) {
+        let invoiceUrl: string | null = null;
+        if (cobrancaExistente.asaas_id) {
+          try {
+            const payment = await getAsaasPayment(cobrancaExistente.asaas_id);
+            invoiceUrl = payment?.invoiceUrl || null;
+          } catch {
+            invoiceUrl = null;
+          }
+        }
+
+        return {
+          success: true,
+          data: {
+            status: cobrancaExistente.status,
+            tipo: cobrancaExistente.tipo,
+            valor: cobrancaExistente.valor,
+            vencimento: cobrancaExistente.vencimento,
+            pix:
+              cobrancaExistente.tipo === 'PIX'
+                ? {
+                    link: invoiceUrl,
+                    copia_cola: includePixPayload ? cobrancaExistente.pix_copiacola : undefined
+                  }
+                : undefined,
+            boleto:
+              cobrancaExistente.tipo === 'BOLETO'
+                ? {
+                    url: cobrancaExistente.boleto_url,
+                    vencimento: cobrancaExistente.vencimento,
+                    link: invoiceUrl
+                  }
+                : undefined
+          }
+        };
+      }
+
       const cpfInput = String(
         params?.cpf ??
           params?.cpf_cnpj ??
@@ -555,20 +603,11 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
         };
       }
 
-      const includePixPayload =
-        params?.incluir_pix === true ||
-        params?.include_pix === true ||
-        params?.incluir_copia_cola === true ||
-        String(params?.incluir_pix ?? params?.include_pix ?? params?.incluir_copia_cola ?? '').toLowerCase() === 'true';
-
       ctx.conversation.tempData ||= {};
       if (cpfDigits) ctx.conversation.tempData.cpf = cpfDigits;
       if (email) ctx.conversation.tempData.email = email;
 
-      const missing = getMissing([
-        ['reserva_id', reservaId],
-        ['cpf', cpfDigits]
-      ]);
+      const missing = getMissing([['cpf', cpfDigits]]);
       if (tipo === 'BOLETO') {
         missing.push(...getMissing([['email', email]]));
       }
@@ -616,43 +655,6 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
           data: {
             status: 'CONFIRMADO',
             message: 'Reserva já está confirmada.'
-          }
-        };
-      }
-
-      const cobrancaExistente = await getPendingCobrancaByReservaId(reservaId, tipo);
-      if (cobrancaExistente) {
-        let invoiceUrl: string | null = null;
-        if (cobrancaExistente.asaas_id) {
-          try {
-            const payment = await getAsaasPayment(cobrancaExistente.asaas_id);
-            invoiceUrl = payment?.invoiceUrl || null;
-          } catch {
-            invoiceUrl = null;
-          }
-        }
-
-        return {
-          success: true,
-          data: {
-            status: cobrancaExistente.status,
-            tipo: cobrancaExistente.tipo,
-            valor: cobrancaExistente.valor,
-            vencimento: cobrancaExistente.vencimento,
-            pix:
-              cobrancaExistente.tipo === 'PIX'
-                ? {
-                    link: invoiceUrl,
-                    copia_cola: includePixPayload ? cobrancaExistente.pix_copiacola : undefined
-                  }
-                : undefined,
-            boleto:
-              cobrancaExistente.tipo === 'BOLETO'
-                ? {
-                    url: cobrancaExistente.boleto_url,
-                    vencimento: cobrancaExistente.vencimento
-                  }
-                : undefined
           }
         };
       }

@@ -107,6 +107,49 @@ function buildMenuPosReservaPrompt() {
   return `O que você quer fazer agora?\n${buildMenuPosReservaText()}`;
 }
 
+function formatPriceRange(p: any) {
+  const min = p?.preco_min;
+  const max = p?.preco_max;
+
+  if (min == null && max == null) return 'Consulte';
+  if (min != null && max != null) {
+    const a = Number(min);
+    const b = Number(max);
+    if (Number.isFinite(a) && Number.isFinite(b) && a !== b) {
+      return `R$ ${formatCurrencyBR(a)} - R$ ${formatCurrencyBR(b)}`;
+    }
+    const v = Number.isFinite(a) ? a : Number(b);
+    return `R$ ${formatCurrencyBR(v)}`;
+  }
+
+  const v = Number(min ?? max);
+  if (!Number.isFinite(v)) return 'Consulte';
+  return `R$ ${formatCurrencyBR(v)}`;
+}
+
+function formatPasseiosOffer(data: any[]) {
+  const list = Array.isArray(data) ? data.slice(0, 8) : [];
+  if (!list.length) {
+    return 'Não achei nenhum passeio agora. Quer que eu busque por: barco, buggy, quadriciclo, mergulho...?';
+  }
+
+  const lines = list.map((p, idx) => {
+    const price = formatPriceRange(p);
+    return `${idx + 1} - ${p.nome} — ${price}`;
+  });
+
+  return `Opções:\n${lines.join('\n')}\n\nResponda com o número.`;
+}
+
+function extractOptionIndex(message: string, max: number) {
+  const digits = String(message || '').replace(/\D/g, '');
+  if (!digits) return undefined;
+  const n = Number.parseInt(digits, 10);
+  if (!Number.isFinite(n)) return undefined;
+  if (n >= 1 && n <= max) return n;
+  return undefined;
+}
+
 function formatReservaCriadaMenu(context: ConversationContext, data: any) {
   const passeio = data?.passeio_nome || context.tempData?.passeioNome || 'Passeio';
   const dataPasseio = data?.data || context.tempData?.data;
@@ -394,9 +437,10 @@ Ferramentas disponíveis:
   exemplo: [TOOL:cancelar_reserva]{"voucher":"CBXXXXXXX"}[/TOOL]
 
 # COMO RESPONDER
-- Se a ferramenta retornar success=false, explique de forma humana e peça exatamente o que falta.
+- Se a ferramenta retornar success=false, peça APENAS o dado faltante (uma frase).
 - Mensagens curtas estilo WhatsApp.
-- Para gerar pagamento, normalmente você vai precisar pedir CPF/CNPJ (e e-mail no boleto). Se o cliente não tiver, peça um CPF/CNPJ do responsável ou ofereça atendimento humano.
+- NÃO use tabelas (nada de markdown com |). Use listas numeradas (1,2,3) e frases curtas.
+- Para gerar pagamento, normalmente você vai precisar pedir CPF/CNPJ (e e-mail no boleto).
 - Emojis moderados (🌊🚤☀️😊✨).`;
 }
 
@@ -454,6 +498,15 @@ export async function runAgentLoop(params: {
     context.tempData.aguardandoConfirmacaoPagamento = true;
   }
 
+  if (!context.tempData.aguardandoMenuPosReserva && Array.isArray(context.tempData.optionIds) && context.tempData.optionIds.length) {
+    const idx = extractOptionIndex(userMessage, context.tempData.optionIds.length);
+    if (idx != null) {
+      context.tempData.passeioId = context.tempData.optionIds[idx - 1];
+      context.tempData.passeioNome = context.tempData.optionList?.[idx - 1];
+      return 'Fechou! Me passa:\n1) Seu nome completo\n2) Data do passeio (ex: amanhã ou 20/12)\n3) Quantas pessoas vão';
+    }
+  }
+
   if (context.tempData.aguardandoMenuPosReserva) {
     const choice = extractSingleDigitChoice(userMessage);
     const t = normalizeString(userMessage);
@@ -497,8 +550,27 @@ export async function runAgentLoop(params: {
     const cpfDigits = context.tempData.cpf;
     const emailSaved = context.tempData.email;
 
+    if ((!cpfDigits || (tipoPagamento === 'BOLETO' && !emailSaved)) && (looksLikePaymentPing(userMessage) || !!paymentChoice)) {
+      const toolResult = await executeTool(
+        'gerar_pagamento',
+        {
+          reserva_id: context.tempData.reservaId,
+          tipo_pagamento: tipoPagamento
+        },
+        { telefone, conversation: context }
+      );
+
+      if (toolResult.success) {
+        context.conversationHistory.push({
+          role: 'system',
+          content: `<tool_result name="gerar_pagamento">${JSON.stringify(toolResult)}</tool_result>`
+        });
+        return formatGerarPagamentoReply(toolResult, tipoPagamento);
+      }
+    }
+
     if (!cpfDigits) {
-      return 'Pra gerar a cobrança, me envia o CPF ou CNPJ do responsável (só números), por favor.';
+      return 'Me envia o CPF ou CNPJ do responsável (só números), por favor.';
     }
 
     if (tipoPagamento === 'BOLETO' && !emailSaved) {
@@ -644,6 +716,10 @@ export async function runAgentLoop(params: {
       content: `<tool_result name="${name}">${JSON.stringify(toolResult)}</tool_result>`
     });
     hasToolResult = true;
+
+    if ((name === 'consultar_passeios' || name === 'buscar_passeio_especifico') && toolResult.success) {
+      return formatPasseiosOffer(toolResult.data);
+    }
 
     if (name === 'criar_reserva' && toolResult.success) {
       context.tempData ||= {};
