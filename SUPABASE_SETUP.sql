@@ -37,6 +37,23 @@ CREATE TABLE IF NOT EXISTS reservas (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Tabela de Cobranças (Asaas)
+CREATE TABLE IF NOT EXISTS cobrancas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  reserva_id UUID REFERENCES reservas(id) ON DELETE CASCADE,
+  cliente_id UUID REFERENCES clientes(id) ON DELETE CASCADE,
+  asaas_id TEXT UNIQUE,
+  tipo TEXT NOT NULL,
+  valor NUMERIC(10,2) NOT NULL,
+  status TEXT DEFAULT 'PENDENTE',
+  pix_qrcode TEXT,
+  pix_copiacola TEXT,
+  boleto_url TEXT,
+  vencimento TEXT,
+  pago_em TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Tabela de Contextos de Conversa
 CREATE TABLE IF NOT EXISTS conversation_contexts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -67,4 +84,6 @@ ON CONFLICT (id) DO NOTHING;
 -- Índices para performance
 CREATE INDEX IF NOT EXISTS idx_reservas_cliente ON reservas(cliente_id);
 CREATE INDEX IF NOT EXISTS idx_reservas_voucher ON reservas(voucher);
+CREATE INDEX IF NOT EXISTS idx_cobrancas_asaas_id ON cobrancas(asaas_id);
+CREATE INDEX IF NOT EXISTS idx_cobrancas_reserva_id ON cobrancas(reserva_id);
 CREATE INDEX IF NOT EXISTS idx_contexts_telefone ON conversation_contexts(telefone);

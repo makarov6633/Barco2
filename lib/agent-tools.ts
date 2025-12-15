@@ -8,7 +8,9 @@ import {
   getOrCreateCliente,
   getPasseioById,
   getPendingCobrancaByReservaId,
-  getReservaById
+  getReservaById,
+  getReservaByVoucher,
+  updateReservaStatus
 } from './supabase';
 import {
   createBoletoPayment,
@@ -21,7 +23,8 @@ export type ToolName =
   | 'buscar_passeio_especifico'
   | 'criar_reserva'
   | 'gerar_pagamento'
-  | 'gerar_voucher';
+  | 'gerar_voucher'
+  | 'cancelar_reserva';
 
 export type ToolResult =
   | { success: true; data: any }
@@ -64,6 +67,11 @@ export function getToolsForPrompt() {
       name: 'gerar_voucher',
       description: 'Gera o texto do voucher para uma reserva confirmada.',
       params: { reserva_id: 'uuid' }
+    },
+    {
+      name: 'cancelar_reserva',
+      description: 'Cancela uma reserva por reserva_id ou voucher.',
+      params: { reserva_id: 'uuid (opcional)', voucher: 'string (opcional)', motivo: 'string (opcional)' }
     }
   ] as const;
 }
@@ -190,9 +198,16 @@ function bestPasseioMatches(passeios: any[], term: string) {
 
 function requireSafeToChargeLive() {
   const isProd = process.env.NODE_ENV === 'production';
-  const sandboxRaw = String(process.env.ASAAS_SANDBOX ?? '').toLowerCase();
-  const sandbox = sandboxRaw === 'true' || sandboxRaw === '1' || sandboxRaw === 'yes';
   if (isProd) return;
+
+  const sandboxRaw = String(process.env.ASAAS_SANDBOX ?? '').toLowerCase();
+  const sandboxFlag = sandboxRaw === 'true' || sandboxRaw === '1' || sandboxRaw === 'yes';
+
+  const envRaw = String(process.env.ASAAS_ENV ?? '').toLowerCase();
+  const baseUrl = String(process.env.ASAAS_BASE_URL ?? '').toLowerCase();
+
+  const sandbox = sandboxFlag || envRaw === 'sandbox' || envRaw === 'test' || baseUrl.includes('sandbox');
+
   if (!sandbox) {
     throw new Error('Pagamentos em produção bloqueados fora de production (defina ASAAS_SANDBOX=true para testar localmente).');
   }
@@ -373,10 +388,53 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
 
       const reservaId = String(params?.reserva_id ?? params?.reservaId ?? ctx.conversation.tempData?.reservaId ?? '').trim();
       const tipo = pickPaymentType(params);
-      const cpf = params?.cpf ? String(params.cpf).trim() : undefined;
-      const email = params?.email ? String(params.email).trim() : undefined;
 
-      const missing = getMissing([['reserva_id', reservaId]]);
+      const cpfInput = String(
+        params?.cpf ??
+          params?.cpf_cnpj ??
+          params?.cpfCnpj ??
+          ctx.conversation.tempData?.cpf ??
+          ''
+      ).trim();
+
+      const emailInput = String(params?.email ?? ctx.conversation.tempData?.email ?? '').trim();
+
+      const cpfDigits = cpfInput.replace(/\D/g, '');
+      if (cpfInput && cpfDigits && cpfDigits.length !== 11 && cpfDigits.length !== 14) {
+        return {
+          success: false,
+          error: {
+            code: 'invalid_cpf',
+            message: 'CPF/CNPJ inválido. Envie só números.',
+            details: { cpf: cpfInput }
+          }
+        };
+      }
+
+      const email = emailInput || undefined;
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return {
+          success: false,
+          error: {
+            code: 'invalid_email',
+            message: 'E-mail inválido. Pode reenviar?',
+            details: { email }
+          }
+        };
+      }
+
+      ctx.conversation.tempData ||= {};
+      if (cpfDigits) ctx.conversation.tempData.cpf = cpfDigits;
+      if (email) ctx.conversation.tempData.email = email;
+
+      const missing = getMissing([
+        ['reserva_id', reservaId],
+        ['cpf', cpfDigits]
+      ]);
+      if (tipo === 'BOLETO') {
+        missing.push(...getMissing([['email', email]]));
+      }
+
       if (missing.length) {
         return { success: false, error: { code: 'missing_fields', message: 'Faltam dados para gerar pagamento.', missing } };
       }
@@ -446,7 +504,7 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
 
       const asaasCustomer = await findOrCreateCustomer({
         name: String(params?.nome ?? cliente.nome ?? 'Cliente'),
-        cpfCnpj: cpf || cliente.cpf || undefined,
+        cpfCnpj: cpfDigits,
         email: email || cliente.email || undefined,
         phone: cliente.telefone
       });
@@ -471,7 +529,10 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
           status: 'PENDENTE',
           pix_qrcode: pixQrCode.encodedImage,
           pix_copiacola: pixQrCode.payload,
-          vencimento: pixQrCode.expirationDate
+          vencimento:
+            pixQrCode.expirationDate ||
+            payment.dueDate ||
+            new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
         });
 
         if (!saved?.id) {
@@ -488,7 +549,10 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
             valor: valor,
             pix: {
               copia_cola: pixQrCode.payload,
-              expiracao: pixQrCode.expirationDate
+              expiracao:
+                pixQrCode.expirationDate ||
+                payment.dueDate ||
+                new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
             }
           }
         };
@@ -509,7 +573,9 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
         valor: valor,
         status: 'PENDENTE',
         boleto_url: payment.bankSlipUrl,
-        vencimento: payment.dueDate
+        vencimento:
+          payment.dueDate ||
+          new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
       });
 
       if (!saved?.id) {
@@ -526,8 +592,61 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
           valor: valor,
           boleto: {
             url: payment.bankSlipUrl,
-            vencimento: payment.dueDate
+            vencimento:
+              payment.dueDate ||
+              new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
           }
+        }
+      };
+    }
+
+    if (name === 'cancelar_reserva') {
+      const reservaIdRaw = String(params?.reserva_id ?? params?.reservaId ?? '').trim();
+      const voucherRaw = String(params?.voucher ?? params?.voucher_code ?? params?.voucherCode ?? '').trim();
+
+      const missing = getMissing([['reserva_id|voucher', reservaIdRaw || voucherRaw]]);
+      if (missing.length) {
+        return { success: false, error: { code: 'missing_fields', message: 'Faltam dados para cancelar.', missing } };
+      }
+
+      const reserva = reservaIdRaw
+        ? await getReservaById(reservaIdRaw)
+        : await getReservaByVoucher(voucherRaw);
+
+      if (!reserva?.id) {
+        return {
+          success: false,
+          error: {
+            code: 'reserva_not_found',
+            message: 'Não encontrei essa reserva.',
+            details: { reserva_id: reservaIdRaw || undefined, voucher: voucherRaw || undefined }
+          }
+        };
+      }
+
+      if (reserva.status === 'CANCELADO') {
+        return {
+          success: true,
+          data: {
+            reserva_id: reserva.id,
+            status: 'CANCELADO',
+            voucher_code: reserva.voucher,
+            message: 'Reserva já estava cancelada.'
+          }
+        };
+      }
+
+      const ok = await updateReservaStatus(reserva.id, 'CANCELADO');
+      if (!ok) {
+        return { success: false, error: { code: 'cancel_failed', message: 'Não consegui cancelar agora. Tente novamente.' } };
+      }
+
+      return {
+        success: true,
+        data: {
+          reserva_id: reserva.id,
+          status: 'CANCELADO',
+          voucher_code: reserva.voucher
         }
       };
     }

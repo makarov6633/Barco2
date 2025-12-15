@@ -2,6 +2,9 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 let cachedSupabase: SupabaseClient | null = null;
 
+type ConversationContextStorageMode = 'unknown' | 'json' | 'columns';
+let cachedConversationContextStorageMode: ConversationContextStorageMode = 'unknown';
+
 function getSupabase() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -87,34 +90,117 @@ export interface ConversationContext {
   metadata?: ConversationMetadata;
 }
 
+function normalizeConversationHistory(raw: any): Array<{ role: string; content: string }> {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((entry) => ({
+      role: typeof entry?.role === 'string' ? entry.role : 'user',
+      content: typeof entry?.content === 'string' ? entry.content : ''
+    }))
+    .filter((entry) => entry.content);
+}
+
+function normalizeMetadata(raw: any): ConversationMetadata {
+  const metadata: ConversationMetadata = raw && typeof raw === 'object' ? raw : {};
+  if (!Array.isArray(metadata.memories)) {
+    metadata.memories = [];
+  }
+  return metadata;
+}
+
+function normalizeTempData(raw: any): ConversationContext['tempData'] {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return {};
+  }
+  return raw;
+}
+
+async function getConversationContextStorageMode(
+  supabase: SupabaseClient
+): Promise<Exclude<ConversationContextStorageMode, 'unknown'>> {
+  if (cachedConversationContextStorageMode !== 'unknown') {
+    return cachedConversationContextStorageMode;
+  }
+
+  const { error } = await supabase.from('conversation_contexts').select('context').limit(1);
+  if (!error) {
+    cachedConversationContextStorageMode = 'json';
+    return cachedConversationContextStorageMode;
+  }
+
+  const msg = `${(error as any)?.message || ''}`.toLowerCase();
+  if (msg.includes('context') && msg.includes('column')) {
+    cachedConversationContextStorageMode = 'columns';
+    return cachedConversationContextStorageMode;
+  }
+
+  cachedConversationContextStorageMode = 'columns';
+  return cachedConversationContextStorageMode;
+}
+
+function mapRowToConversationContext(row: any, telefoneFallback: string): ConversationContext {
+  const telefone = typeof row?.telefone === 'string' ? row.telefone : telefoneFallback;
+
+  const stored = row?.context && typeof row.context === 'object' ? row.context : null;
+  if (stored) {
+    const metadata = normalizeMetadata(stored.metadata ?? row.metadata);
+    return {
+      telefone,
+      nome: stored.nome ?? row.nome,
+      conversationHistory: normalizeConversationHistory(stored.conversationHistory ?? stored.conversation_history),
+      currentFlow: stored.currentFlow ?? stored.current_flow,
+      flowStep: stored.flowStep ?? stored.flow_step,
+      tempData: normalizeTempData(stored.tempData ?? stored.temp_data),
+      lastIntent: stored.lastIntent ?? stored.last_intent,
+      lastMessage: stored.lastMessage ?? stored.last_message,
+      lastMessageTime: stored.lastMessageTime ?? stored.last_message_time,
+      metadata
+    };
+  }
+
+  const metadata = normalizeMetadata(row?.metadata);
+  return {
+    telefone,
+    nome: row?.nome,
+    conversationHistory: normalizeConversationHistory(row?.conversation_history),
+    currentFlow: row?.current_flow,
+    flowStep: row?.flow_step,
+    tempData: normalizeTempData(row?.temp_data),
+    lastIntent: row?.last_intent,
+    lastMessage: row?.last_message,
+    lastMessageTime: row?.last_message_time,
+    metadata
+  };
+}
+
 export async function getOrCreateCliente(telefone: string, nome?: string): Promise<Cliente | null> {
   try {
     const supabase = getSupabase();
 
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('clientes')
       .select('*')
       .eq('telefone', telefone)
       .single();
 
     if (data) {
-      if (nome && nome !== data.nome) {
+      if (nome && nome !== (data as any).nome) {
         await supabase
           .from('clientes')
           .update({ nome })
-          .eq('id', data.id);
-        return { ...data, nome };
+          .eq('id', (data as any).id);
+        return { ...(data as any), nome };
       }
-      return data;
+      return data as any;
     }
 
-    const { data: newCliente, error: createError } = await supabase
+    const { data: newCliente } = await supabase
       .from('clientes')
       .insert({ telefone, nome: nome || 'Cliente' })
       .select()
       .single();
 
-    return newCliente;
+    return newCliente as any;
   } catch (error) {
     console.error('Erro ao buscar/criar cliente:', error);
     return null;
@@ -125,12 +211,12 @@ export async function getAllPasseios(): Promise<Passeio[]> {
   try {
     const supabase = getSupabase();
 
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('passeios')
       .select('*')
       .order('nome');
 
-    return data || [];
+    return (data as any) || [];
   } catch (error) {
     console.error('Erro ao buscar passeios:', error);
     return [];
@@ -141,13 +227,13 @@ export async function createReserva(reserva: Omit<Reserva, 'id' | 'created_at'>)
   try {
     const supabase = getSupabase();
 
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('reservas')
       .insert(reserva)
       .select()
       .single();
 
-    return data;
+    return (data as any) || null;
   } catch (error) {
     console.error('Erro ao criar reserva:', error);
     return null;
@@ -155,6 +241,13 @@ export async function createReserva(reserva: Omit<Reserva, 'id' | 'created_at'>)
 }
 
 export async function getConversationContext(telefone: string): Promise<ConversationContext> {
+  const fallback: ConversationContext = {
+    telefone,
+    conversationHistory: [],
+    tempData: {},
+    metadata: { memories: [] }
+  };
+
   try {
     const supabase = getSupabase();
 
@@ -162,44 +255,16 @@ export async function getConversationContext(telefone: string): Promise<Conversa
       .from('conversation_contexts')
       .select('*')
       .eq('telefone', telefone)
-      .single();
+      .limit(1)
+      .maybeSingle();
 
     if (error || !data) {
-      return {
-        telefone,
-        conversationHistory: [],
-        tempData: {},
-        metadata: { memories: [] }
-      };
+      return fallback;
     }
 
-    const rawContext = (data as any).context;
-    const parsedContext = rawContext && typeof rawContext === 'object' ? rawContext : {};
-
-    const metadata: ConversationMetadata = parsedContext.metadata || {};
-    if (!Array.isArray(metadata.memories)) {
-      metadata.memories = [];
-    }
-
-    return {
-      telefone: (data as any).telefone || telefone,
-      nome: parsedContext.nome,
-      conversationHistory: Array.isArray(parsedContext.conversationHistory) ? parsedContext.conversationHistory : [],
-      currentFlow: parsedContext.currentFlow,
-      flowStep: parsedContext.flowStep,
-      tempData: parsedContext.tempData || {},
-      lastIntent: (data as any).last_intent || parsedContext.lastIntent,
-      lastMessage: (data as any).last_message || parsedContext.lastMessage,
-      lastMessageTime: parsedContext.lastMessageTime,
-      metadata
-    };
+    return mapRowToConversationContext(data, telefone);
   } catch {
-    return {
-      telefone,
-      conversationHistory: [],
-      tempData: {},
-      metadata: { memories: [] }
-    };
+    return fallback;
   }
 }
 
@@ -207,41 +272,90 @@ export async function saveConversationContext(context: ConversationContext): Pro
   try {
     const supabase = getSupabase();
 
-    const metadata: ConversationMetadata = context.metadata || {};
-    if (!Array.isArray(metadata.memories)) {
-      metadata.memories = [];
-    }
-    context.metadata = metadata;
+    const metadata = normalizeMetadata(context.metadata);
 
-    const payload: any = {
-      telefone: context.telefone,
-      context: {
-        nome: context.nome,
-        conversationHistory: context.conversationHistory || [],
-        currentFlow: context.currentFlow,
-        flowStep: context.flowStep,
-        tempData: context.tempData || {},
-        lastIntent: context.lastIntent,
-        lastMessage: context.lastMessage,
-        lastMessageTime: context.lastMessageTime,
-        metadata
-      },
-      last_message: context.lastMessage,
-      last_intent: context.lastIntent,
-      last_updated: new Date().toISOString()
+    const safeContext: ConversationContext = {
+      ...context,
+      conversationHistory: normalizeConversationHistory(context.conversationHistory),
+      tempData: normalizeTempData(context.tempData),
+      lastMessageTime: context.lastMessageTime || new Date().toISOString(),
+      metadata
     };
+
+    const mode = await getConversationContextStorageMode(supabase);
 
     const { data: existing } = await supabase
       .from('conversation_contexts')
       .select('id')
-      .eq('telefone', context.telefone)
+      .eq('telefone', safeContext.telefone)
+      .limit(1)
       .maybeSingle();
+
+    if (mode === 'json') {
+      const minimalPayload: any = {
+        telefone: safeContext.telefone,
+        context: safeContext
+      };
+
+      const extendedPayload: any = {
+        ...minimalPayload,
+        last_message: safeContext.lastMessage,
+        last_intent: safeContext.lastIntent,
+        last_updated: safeContext.lastMessageTime,
+        metadata: safeContext.metadata
+      };
+
+      if (existing?.id) {
+        const { error } = await supabase
+          .from('conversation_contexts')
+          .update(extendedPayload)
+          .eq('id', (existing as any).id);
+
+        if (error) {
+          const msg = `${(error as any)?.message || ''}`.toLowerCase();
+          if (msg.includes('column')) {
+            await supabase
+              .from('conversation_contexts')
+              .update(minimalPayload)
+              .eq('id', (existing as any).id);
+          }
+        }
+      } else {
+        const { error } = await supabase
+          .from('conversation_contexts')
+          .insert(extendedPayload);
+
+        if (error) {
+          const msg = `${(error as any)?.message || ''}`.toLowerCase();
+          if (msg.includes('column')) {
+            await supabase
+              .from('conversation_contexts')
+              .insert(minimalPayload);
+          }
+        }
+      }
+
+      return;
+    }
+
+    const payload: any = {
+      telefone: safeContext.telefone,
+      nome: safeContext.nome,
+      conversation_history: safeContext.conversationHistory,
+      current_flow: safeContext.currentFlow,
+      flow_step: safeContext.flowStep,
+      temp_data: safeContext.tempData,
+      last_intent: safeContext.lastIntent,
+      last_message: safeContext.lastMessage,
+      last_message_time: safeContext.lastMessageTime,
+      metadata: safeContext.metadata
+    };
 
     if (existing?.id) {
       await supabase
         .from('conversation_contexts')
         .update(payload)
-        .eq('id', existing.id);
+        .eq('id', (existing as any).id);
     } else {
       await supabase
         .from('conversation_contexts')
@@ -282,7 +396,7 @@ export async function getAllKnowledgeChunks(): Promise<KnowledgeChunk[]> {
       console.error('Erro ao buscar knowledge_chunks:', error);
       return [];
     }
-    return data || [];
+    return (data as any) || [];
   } catch (error) {
     console.error('Erro ao buscar knowledge_chunks:', error);
     return [];
@@ -308,9 +422,15 @@ export async function createCobranca(cobranca: Omit<Cobranca, 'id'>): Promise<Co
   try {
     const supabase = getSupabase();
     const { data, error } = await supabase.from('cobrancas').insert(cobranca).select().single();
-    if (error) { console.error('Erro ao criar cobrança:', error); return null; }
-    return data;
-  } catch (error) { console.error('Erro ao criar cobrança:', error); return null; }
+    if (error) {
+      console.error('Erro ao criar cobrança:', error);
+      return null;
+    }
+    return (data as any) || null;
+  } catch (error) {
+    console.error('Erro ao criar cobrança:', error);
+    return null;
+  }
 }
 
 export async function updateCobrancaByAsaasId(asaasId: string, updates: Partial<Cobranca>): Promise<Cobranca | null> {
@@ -318,15 +438,17 @@ export async function updateCobrancaByAsaasId(asaasId: string, updates: Partial<
     const supabase = getSupabase();
     const { data, error } = await supabase.from('cobrancas').update(updates).eq('asaas_id', asaasId).select().single();
     if (error) return null;
-    return data;
-  } catch { return null; }
+    return (data as any) || null;
+  } catch {
+    return null;
+  }
 }
 
 export async function getCobrancaByAsaasId(asaasId: string): Promise<Cobranca | null> {
   try {
     const supabase = getSupabase();
     const { data } = await supabase.from('cobrancas').select('*').eq('asaas_id', asaasId).single();
-    return data;
+    return (data as any) || null;
   } catch {
     return null;
   }
@@ -345,7 +467,7 @@ export async function getPendingCobrancaByReservaId(reservaId: string, tipo: Cob
       .limit(1)
       .single();
     if (error) return null;
-    return data;
+    return (data as any) || null;
   } catch {
     return null;
   }
@@ -355,8 +477,10 @@ export async function getReservaById(reservaId: string): Promise<Reserva | null>
   try {
     const supabase = getSupabase();
     const { data } = await supabase.from('reservas').select('*').eq('id', reservaId).single();
-    return data;
-  } catch { return null; }
+    return (data as any) || null;
+  } catch {
+    return null;
+  }
 }
 
 export async function updateReservaStatus(reservaId: string, status: string, voucher?: string): Promise<boolean> {
@@ -366,21 +490,40 @@ export async function updateReservaStatus(reservaId: string, status: string, vou
     if (voucher) updates.voucher = voucher;
     const { error } = await supabase.from('reservas').update(updates).eq('id', reservaId);
     return !error;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 export async function getClienteById(clienteId: string): Promise<Cliente | null> {
   try {
     const supabase = getSupabase();
     const { data } = await supabase.from('clientes').select('*').eq('id', clienteId).single();
-    return data;
-  } catch { return null; }
+    return (data as any) || null;
+  } catch {
+    return null;
+  }
 }
 
 export async function getPasseioById(passeioId: string): Promise<Passeio | null> {
   try {
     const supabase = getSupabase();
     const { data } = await supabase.from('passeios').select('*').eq('id', passeioId).single();
-    return data;
-  } catch { return null; }
+    return (data as any) || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getReservaByVoucher(voucher: string): Promise<Reserva | null> {
+  const v = String(voucher || '').trim();
+  if (!v) return null;
+
+  try {
+    const supabase = getSupabase();
+    const { data } = await supabase.from('reservas').select('*').eq('voucher', v).single();
+    return (data as any) || null;
+  } catch {
+    return null;
+  }
 }
