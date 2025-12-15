@@ -79,6 +79,7 @@ export interface ConversationContext {
     cpf?: string;
     email?: string;
     tipoPagamento?: 'PIX' | 'BOLETO';
+    aguardandoConfirmacaoPagamento?: boolean;
     optionList?: string[];
     optionIds?: string[];
     reservaId?: string;

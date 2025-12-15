@@ -38,7 +38,46 @@ function looksLikePaymentPing(message: string) {
   const t = normalizeString(message);
   if (!t) return false;
   const ping = t.replace(/\?+$/, '').trim();
-  return ping === 'conseguiu' || ping === 'consegue' || ping === 'cade' || ping === 'ok';
+  if (!ping) return false;
+
+  if (ping === 'ok') return true;
+
+  const starters = ['conseguiu', 'consegue', 'cade'];
+  return starters.some((s) => ping === s || ping.startsWith(`${s} `));
+}
+
+function looksLikeYes(message: string) {
+  const t = normalizeString(message);
+  if (!t) return false;
+
+  if (/^(sim|pode|ok|okay|blz|beleza|claro|manda|vai|bora|gera|gerar|confirmo|confirmar)\b/.test(t)) return true;
+  if (t.includes('pode gerar') || t.includes('pode mandar') || t.includes('pode enviar')) return true;
+  return false;
+}
+
+function looksLikeNo(message: string) {
+  const t = normalizeString(message);
+  if (!t) return false;
+
+  if (/^(nao|negativo|cancela|cancelar|pare|espera|aguarda|depois)\b/.test(t)) return true;
+  if (t.includes('nao quero') || t.includes('nao pode')) return true;
+  return false;
+}
+
+function buildPagamentoConfirmacaoMessage(context: ConversationContext, tipo: PaymentType) {
+  const passeio = context.tempData?.passeioNome;
+  const data = context.tempData?.data;
+  const pessoas = context.tempData?.numPessoas;
+  const valor = context.tempData?.valorTotal;
+
+  const lines: string[] = [];
+  if (passeio) lines.push(`• Passeio: ${passeio}`);
+  if (data) lines.push(`• Data: ${data}`);
+  if (pessoas) lines.push(`• Pessoas: ${pessoas}`);
+  if (valor != null) lines.push(`• Total: R$ ${formatCurrencyBR(Number(valor))}`);
+
+  const details = lines.length ? `\n${lines.join('\n')}\n` : '\n';
+  return `Perfeito! Antes de eu gerar o ${tipo}, só confirma pra mim:${details}\nPosso gerar o ${tipo} agora? Responda SIM ou NÃO.`;
 }
 
 function formatCurrencyBR(value: number) {
@@ -216,20 +255,29 @@ function shouldForceToolForUserMessage(userMessage: string) {
 function looksLikeStall(text: string) {
   const t = normalizeString(text);
   if (!t) return false;
-  return (
-    (t.includes('deixa eu ver') ||
-      t.includes('deixa eu confirmar') ||
-      t.includes('vou confirmar') ||
-      t.includes('ja vou confirmar') ||
-      t.includes('vou gerar') ||
-      t.includes('ja vou gerar') ||
-      t.includes('ja estou gerando') ||
-      t.includes('aguarde') ||
-      t.includes('um instante') ||
-      t.includes('ja estou verificando') ||
-      t.includes('ja vou ver')) &&
-    t.length < 220
-  );
+
+  const markers = [
+    'deixa eu ver',
+    'deixa eu confirmar',
+    'vou confirmar',
+    'ja vou confirmar',
+    'vou gerar',
+    'ja vou gerar',
+    'ja estou gerando',
+    'estou gerando',
+    'aguarde',
+    'um instante',
+    'um momento',
+    'so um momento',
+    'so um minuto',
+    'um minuto',
+    'segundinho',
+    'rapidinho',
+    'ja estou verificando',
+    'ja vou ver'
+  ];
+
+  return markers.some((m) => t.includes(m)) && t.length < 260;
 }
 
 function looksLikeHallucinatedToolResult(text: string) {
@@ -364,28 +412,72 @@ export async function runAgentLoop(params: {
   if (email) context.tempData.email = email;
 
   const paymentChoice = detectPaymentType(userMessage);
-  if (paymentChoice) context.tempData.tipoPagamento = paymentChoice;
+  if (paymentChoice) {
+    context.tempData.tipoPagamento = paymentChoice;
+    context.tempData.aguardandoConfirmacaoPagamento = true;
+  }
 
-  const tipoPagamento = paymentChoice || context.tempData.tipoPagamento;
-  if (tipoPagamento && context.tempData.reservaId && (paymentChoice || looksLikePaymentPing(userMessage))) {
-    const wantsCopiaCola = normalizeString(userMessage).includes('copia') || normalizeString(userMessage).includes('copiacola');
+  const tipoPagamento = context.tempData.tipoPagamento;
+  if (tipoPagamento && context.tempData.reservaId) {
+    const cpfDigits = context.tempData.cpf;
+    const emailSaved = context.tempData.email;
 
-    const toolResult = await executeTool(
-      'gerar_pagamento',
-      {
-        reserva_id: context.tempData.reservaId,
-        tipo_pagamento: tipoPagamento,
-        incluir_copia_cola: wantsCopiaCola
-      },
-      { telefone, conversation: context }
-    );
+    if (!cpfDigits) {
+      return 'Pra gerar a cobrança, me envia o CPF ou CNPJ do responsável (só números), por favor.';
+    }
 
-    context.conversationHistory.push({
-      role: 'system',
-      content: `<tool_result name="gerar_pagamento">${JSON.stringify(toolResult)}</tool_result>`
-    });
+    if (tipoPagamento === 'BOLETO' && !emailSaved) {
+      return 'Para boleto, me manda um e-mail válido (ex: nome@gmail.com), por favor.';
+    }
 
-    return formatGerarPagamentoReply(toolResult, tipoPagamento);
+    const awaiting = context.tempData.aguardandoConfirmacaoPagamento === true;
+
+    if (awaiting) {
+      if (looksLikeNo(userMessage)) {
+        delete context.tempData.aguardandoConfirmacaoPagamento;
+        delete context.tempData.tipoPagamento;
+        return 'Sem problema! Você prefere PIX ou boleto?';
+      }
+
+      if (looksLikeYes(userMessage) || looksLikePaymentPing(userMessage)) {
+        delete context.tempData.aguardandoConfirmacaoPagamento;
+
+        const wantsCopiaCola =
+          normalizeString(userMessage).includes('copia') || normalizeString(userMessage).includes('copiacola');
+
+        const toolResult = await executeTool(
+          'gerar_pagamento',
+          {
+            reserva_id: context.tempData.reservaId,
+            tipo_pagamento: tipoPagamento,
+            cpf: cpfDigits,
+            email: emailSaved,
+            incluir_copia_cola: wantsCopiaCola
+          },
+          { telefone, conversation: context }
+        );
+
+        context.conversationHistory.push({
+          role: 'system',
+          content: `<tool_result name="gerar_pagamento">${JSON.stringify(toolResult)}</tool_result>`
+        });
+
+        return formatGerarPagamentoReply(toolResult, tipoPagamento);
+      }
+
+      return buildPagamentoConfirmacaoMessage(context, tipoPagamento);
+    }
+
+    const wantsGenerate =
+      !!paymentChoice ||
+      looksLikePaymentPing(userMessage) ||
+      normalizeString(userMessage).includes('gera') ||
+      normalizeString(userMessage).includes('gerar');
+
+    if (wantsGenerate) {
+      context.tempData.aguardandoConfirmacaoPagamento = true;
+      return buildPagamentoConfirmacaoMessage(context, tipoPagamento);
+    }
   }
 
   const allowedTools = new Set<ToolName>([
@@ -433,6 +525,15 @@ export async function runAgentLoop(params: {
           });
           continue;
         }
+      }
+
+      if (hasToolResult && looksLikeStall(cleaned)) {
+        context.conversationHistory.push({
+          role: 'system',
+          content:
+            'INSTRUÇÃO: Sua resposta anterior pareceu enrolação. Responda agora com texto final para o cliente usando o último <tool_result> (se success=false, peça exatamente o que falta; se success=true, entregue a informação/link).'
+        });
+        continue;
       }
 
       if (hasToolResult && looksLikeHallucinatedToolResult(cleaned)) {
