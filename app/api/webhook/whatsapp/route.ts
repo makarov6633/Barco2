@@ -6,23 +6,59 @@ const MessagingResponse = require('twilio').twiml.MessagingResponse;
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
-    const from = formData.get('From') as string;
-    const body = formData.get('Body') as string;
+    const from = String(formData.get('From') || '').trim();
+    const bodyRaw = String(formData.get('Body') || '');
 
-    if (!from || !body) {
-      console.error('❌ Dados incompletos:', { from, body });
-      return NextResponse.json({ error: 'Dados incompletos' }, { status: 400 });
+    const numMediaRaw = String(formData.get('NumMedia') || '0');
+    const numMedia = Number.parseInt(numMediaRaw, 10) || 0;
+
+    const mediaTypes: string[] = [];
+    for (let i = 0; i < numMedia; i++) {
+      const ct = formData.get(`MediaContentType${i}`);
+      if (ct) mediaTypes.push(String(ct));
     }
 
-    const telefone = from.replace('whatsapp:', '');
-    const message = body.trim();
+    const hasMedia = numMedia > 0;
+    const hasAudio = mediaTypes.some((t) => t.toLowerCase().startsWith('audio/'));
+
+    const twiml = new MessagingResponse();
+
+    if (!from) {
+      twiml.message('Não consegui identificar seu número. Pode tentar novamente em texto?');
+      return new NextResponse(twiml.toString(), {
+        status: 200,
+        headers: { 'Content-Type': 'text/xml' }
+      });
+    }
+
+    const telefone = from.replace(/^whatsapp:/, '');
+    const message = bodyRaw.trim();
+
+    if (hasMedia && !message) {
+      twiml.message(
+        hasAudio
+          ? 'Recebi seu áudio. No momento, para eu te atender com precisão, preciso que você digite sua mensagem em texto, por favor. (PT/EN/ES)'
+          : 'Recebi sua mídia. Para eu te atender com precisão, pode descrever em texto o que você precisa, por favor? (PT/EN/ES)'
+      );
+      return new NextResponse(twiml.toString(), {
+        status: 200,
+        headers: { 'Content-Type': 'text/xml' }
+      });
+    }
+
+    if (!message) {
+      twiml.message('Para eu te ajudar, me envie sua mensagem em texto, por favor. (PT/EN/ES)');
+      return new NextResponse(twiml.toString(), {
+        status: 200,
+        headers: { 'Content-Type': 'text/xml' }
+      });
+    }
 
     console.log(`\n📨 Nova mensagem de ${telefone}`);
     console.log(`💬 Mensagem recebida (${message.length} chars)\n`);
 
     const response = await processMessage(telefone, message);
 
-    const twiml = new MessagingResponse();
     twiml.message(response);
 
     console.log(`📤 Resposta enviada (${response.length} chars)\n`);
@@ -38,7 +74,7 @@ export async function POST(req: NextRequest) {
     console.error('❌ Erro no webhook:', error);
     
     const twiml = new MessagingResponse();
-    twiml.message('Ops! Erro técnico 😔\nChama (22) 99824-9911!');
+    twiml.message('Desculpe, tive um problema técnico. Pode tentar novamente em texto?');
 
     return new NextResponse(twiml.toString(), {
       status: 200,

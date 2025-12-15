@@ -67,7 +67,9 @@ function getAsaasBaseUrl(): string {
 
 function getAsaasApiKey(): string | undefined {
   const key = process.env.ASAAS_API_KEY;
-  return key && key.trim() ? key.trim() : undefined;
+  const trimmed = key && key.trim() ? key.trim() : undefined;
+  if (!trimmed) return undefined;
+  return trimmed.replace(/\\\$/g, '$');
 }
 
 export function isAsaasEnabled(): boolean {
@@ -285,4 +287,10 @@ export async function createBoletoPayment(params: {
     description: params.description,
     externalReference: params.externalReference
   });
+}
+
+export async function getAsaasPayment(paymentId: string): Promise<AsaasPayment> {
+  const id = String(paymentId || '').trim();
+  if (!id) throw new Error('paymentId is required');
+  return asaasRequest<AsaasPayment>(`/payments/${id}`, { method: 'GET' });
 }
