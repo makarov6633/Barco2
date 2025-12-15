@@ -334,19 +334,25 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
           })
         : passeios;
 
+      const data = filtered.map(p => ({
+        id: p.id,
+        nome: p.nome,
+        categoria: p.categoria,
+        descricao: p.descricao ? String(p.descricao).slice(0, 280) : null,
+        local: p.local,
+        duracao: p.duracao,
+        preco_min: p.preco_min != null ? Number(p.preco_min) : null,
+        preco_max: p.preco_max != null ? Number(p.preco_max) : null,
+        horarios: p.horarios
+      }));
+
+      ctx.conversation.tempData ||= {};
+      ctx.conversation.tempData.optionIds = data.slice(0, 12).map((p) => p.id);
+      ctx.conversation.tempData.optionList = data.slice(0, 12).map((p) => p.nome);
+
       return {
         success: true,
-        data: filtered.map(p => ({
-          id: p.id,
-          nome: p.nome,
-          categoria: p.categoria,
-          descricao: p.descricao ? String(p.descricao).slice(0, 280) : null,
-          local: p.local,
-          duracao: p.duracao,
-          preco_min: p.preco_min != null ? Number(p.preco_min) : null,
-          preco_max: p.preco_max != null ? Number(p.preco_max) : null,
-          horarios: p.horarios
-        }))
+        data
       };
     }
 
@@ -359,19 +365,25 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
       const passeios = await getAllPasseios();
       const matches = bestPasseioMatches(passeios, termo);
 
+      const data = matches.map(p => ({
+        id: p.id,
+        nome: p.nome,
+        categoria: p.categoria,
+        descricao: p.descricao ? String(p.descricao).slice(0, 280) : null,
+        local: p.local,
+        duracao: p.duracao,
+        preco_min: p.preco_min != null ? Number(p.preco_min) : null,
+        preco_max: p.preco_max != null ? Number(p.preco_max) : null,
+        horarios: p.horarios
+      }));
+
+      ctx.conversation.tempData ||= {};
+      ctx.conversation.tempData.optionIds = data.slice(0, 12).map((p) => p.id);
+      ctx.conversation.tempData.optionList = data.slice(0, 12).map((p) => p.nome);
+
       return {
         success: true,
-        data: matches.map(p => ({
-          id: p.id,
-          nome: p.nome,
-          categoria: p.categoria,
-          descricao: p.descricao ? String(p.descricao).slice(0, 280) : null,
-          local: p.local,
-          duracao: p.duracao,
-          preco_min: p.preco_min != null ? Number(p.preco_min) : null,
-          preco_max: p.preco_max != null ? Number(p.preco_max) : null,
-          horarios: p.horarios
-        }))
+        data
       };
     }
 

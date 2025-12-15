@@ -91,6 +91,38 @@ function formatCurrencyBR(value: number) {
   return n.toFixed(2).replace('.', ',');
 }
 
+function extractSingleDigitChoice(message: string) {
+  const digits = String(message || '').replace(/\D/g, '');
+  if (digits.length !== 1) return undefined;
+  const n = Number.parseInt(digits, 10);
+  if (n === 1 || n === 2) return n;
+  return undefined;
+}
+
+function buildMenuPosReservaText() {
+  return '1 - Continuar pesquisando outros passeios\n2 - Emitir boleto ou pix';
+}
+
+function buildMenuPosReservaPrompt() {
+  return `O que você quer fazer agora?\n${buildMenuPosReservaText()}`;
+}
+
+function formatReservaCriadaMenu(context: ConversationContext, data: any) {
+  const passeio = data?.passeio_nome || context.tempData?.passeioNome || 'Passeio';
+  const dataPasseio = data?.data || context.tempData?.data;
+  const pessoas = data?.num_pessoas ?? context.tempData?.numPessoas;
+  const valor = data?.valor_total ?? context.tempData?.valorTotal;
+
+  const lines: string[] = [];
+  if (passeio) lines.push(`🚤 ${passeio}`);
+  if (dataPasseio) lines.push(`📅 ${dataPasseio}`);
+  if (pessoas != null) lines.push(`👥 ${pessoas} pessoa(s)`);
+  if (valor != null) lines.push(`💰 Total: R$ ${formatCurrencyBR(Number(valor))}`);
+
+  const resumo = lines.length ? `${lines.join('\n')}\n\n` : '';
+  return `Reserva criada! 🎉\n${resumo}${buildMenuPosReservaPrompt()}`;
+}
+
 function formatGerarPagamentoReply(result: ToolResult, tipo: PaymentType) {
   if (!result.success) {
     const code = result.error.code || 'error';
@@ -422,6 +454,44 @@ export async function runAgentLoop(params: {
     context.tempData.aguardandoConfirmacaoPagamento = true;
   }
 
+  if (context.tempData.aguardandoMenuPosReserva) {
+    const choice = extractSingleDigitChoice(userMessage);
+    const t = normalizeString(userMessage);
+
+    const wantsSearch =
+      choice === 1 ||
+      t.includes('continuar') ||
+      t.includes('pesquisar') ||
+      t.includes('outros passeios') ||
+      t.includes('outro passeio') ||
+      t.includes('ver mais');
+
+    const wantsPay =
+      choice === 2 ||
+      !!paymentChoice ||
+      !!cpf ||
+      t.includes('pagar') ||
+      t.includes('pagamento') ||
+      t.includes('cobranca');
+
+    if (wantsSearch) {
+      delete context.tempData.aguardandoMenuPosReserva;
+      delete context.tempData.tipoPagamento;
+      delete context.tempData.aguardandoConfirmacaoPagamento;
+      return 'Beleza! O que você quer pesquisar agora? (barco, buggy, quadriciclo, mergulho, transfer...)';
+    }
+
+    if (wantsPay) {
+      delete context.tempData.aguardandoMenuPosReserva;
+
+      if (!context.tempData.tipoPagamento) {
+        return 'Perfeito. Você prefere PIX ou boleto?';
+      }
+    } else {
+      return buildMenuPosReservaPrompt();
+    }
+  }
+
   const tipoPagamento = context.tempData.tipoPagamento;
   if (tipoPagamento && context.tempData.reservaId) {
     const cpfDigits = context.tempData.cpf;
@@ -574,6 +644,14 @@ export async function runAgentLoop(params: {
       content: `<tool_result name="${name}">${JSON.stringify(toolResult)}</tool_result>`
     });
     hasToolResult = true;
+
+    if (name === 'criar_reserva' && toolResult.success) {
+      context.tempData ||= {};
+      context.tempData.aguardandoMenuPosReserva = true;
+      delete context.tempData.tipoPagamento;
+      delete context.tempData.aguardandoConfirmacaoPagamento;
+      return formatReservaCriadaMenu(context, toolResult.data);
+    }
   }
 
   return 'Ops! Meu sistema ficou preso aqui 😅 Pode me dizer de novo o que você quer (passeio + data + pessoas)?';

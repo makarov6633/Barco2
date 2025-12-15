@@ -80,6 +80,7 @@ export interface ConversationContext {
     email?: string;
     tipoPagamento?: 'PIX' | 'BOLETO';
     aguardandoConfirmacaoPagamento?: boolean;
+    aguardandoMenuPosReserva?: boolean;
     optionList?: string[];
     optionIds?: string[];
     reservaId?: string;
