@@ -78,6 +78,7 @@ export interface ConversationContext {
     numPessoas?: number;
     cpf?: string;
     email?: string;
+    tipoPagamento?: 'PIX' | 'BOLETO';
     optionList?: string[];
     optionIds?: string[];
     reservaId?: string;
