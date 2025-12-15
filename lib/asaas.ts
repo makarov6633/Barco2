@@ -124,6 +124,26 @@ async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function getAsaasTimeoutMs() {
+  const raw = process.env.ASAAS_TIMEOUT_MS;
+  const n = raw ? Number.parseInt(raw, 10) : NaN;
+  if (Number.isFinite(n) && n > 0) {
+    return Math.min(Math.max(n, 1500), 15000);
+  }
+  return 8000;
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(id);
+  }
+}
+
 async function asaasRequest<T>(
   path: string,
   options: { method: string; body?: any }
@@ -140,45 +160,60 @@ async function asaasRequest<T>(
 
   const url = `${baseUrl}${path.startsWith('/') ? '' : '/'}${path}`;
   const userAgent = process.env.ASAAS_USER_AGENT || 'capy-barco2/1.0';
+  const timeoutMs = getAsaasTimeoutMs();
 
-  const maxAttempts = 3;
+  const maxAttempts = 2;
   let lastErr: any;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    let res: Response;
+
     try {
-      const res = await fetch(url, {
-        method: options.method,
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': userAgent,
-          access_token: apiKey
+      res = await fetchWithTimeout(
+        url,
+        {
+          method: options.method,
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': userAgent,
+            access_token: apiKey
+          },
+          body: options.body ? JSON.stringify(options.body) : undefined
         },
-        body: options.body ? JSON.stringify(options.body) : undefined
-      });
-
-      const contentType = res.headers.get('content-type') || '';
-      const isJson = contentType.includes('application/json');
-      const data = isJson ? await res.json().catch(() => undefined) : await res.text().catch(() => undefined);
-
-      if (res.ok) {
-        return data as T;
-      }
-
-      const status = res.status;
-      const retryable = status === 429 || status >= 500;
-
-      if (!retryable) {
-        if (isJson) {
-          throw new Error(normalizeAsaasErrorMessage(data));
-        }
-        const text = typeof data === 'string' ? data : '';
-        throw new Error(`Asaas request failed ${status}: ${text.substring(0, 600)}`);
-      }
-
-      lastErr = new Error(isJson ? normalizeAsaasErrorMessage(data) : `Asaas request failed ${status}`);
+        timeoutMs
+      );
     } catch (err: any) {
-      lastErr = err;
+      lastErr = err?.name === 'AbortError' ? new Error('Asaas request timed out') : err;
+
+      if (attempt < maxAttempts - 1) {
+        const backoff = 250 * Math.pow(2, attempt);
+        await sleep(backoff);
+        continue;
+      }
+
+      break;
     }
+
+    const contentType = res.headers.get('content-type') || '';
+    const isJson = contentType.includes('application/json');
+    const data = isJson ? await res.json().catch(() => undefined) : await res.text().catch(() => undefined);
+
+    if (res.ok) {
+      return data as T;
+    }
+
+    const status = res.status;
+    const retryable = status === 429 || status >= 500;
+
+    if (!retryable) {
+      if (isJson) {
+        throw new Error(normalizeAsaasErrorMessage(data));
+      }
+      const text = typeof data === 'string' ? data : '';
+      throw new Error(`Asaas request failed ${status}: ${text.substring(0, 600)}`);
+    }
+
+    lastErr = new Error(isJson ? normalizeAsaasErrorMessage(data) : `Asaas request failed ${status}`);
 
     if (attempt < maxAttempts - 1) {
       const backoff = 250 * Math.pow(2, attempt);

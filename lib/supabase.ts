@@ -78,6 +78,9 @@ export interface ConversationContext {
     numPessoas?: number;
     cpf?: string;
     email?: string;
+    tipoPagamento?: 'PIX' | 'BOLETO';
+    aguardandoConfirmacaoPagamento?: boolean;
+    aguardandoMenuPosReserva?: boolean;
     optionList?: string[];
     optionIds?: string[];
     reservaId?: string;
@@ -526,4 +529,83 @@ export async function getReservaByVoucher(voucher: string): Promise<Reserva | nu
   } catch {
     return null;
   }
+}
+
+export type AdminReservaRow = {
+  id: string;
+  status: string;
+  data_passeio: string;
+  num_pessoas: number;
+  valor_total: number;
+  voucher: string;
+  created_at?: string;
+  passeio?: { id: string; nome: string; categoria?: string | null; horarios?: string | null; local?: string | null } | null;
+  cliente?: { id: string; nome: string; telefone: string; email?: string | null } | null;
+};
+
+function getBrazilTodayISO() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(new Date());
+
+  const y = parts.find(p => p.type === 'year')?.value;
+  const m = parts.find(p => p.type === 'month')?.value;
+  const d = parts.find(p => p.type === 'day')?.value;
+
+  if (!y || !m || !d) {
+    const now = new Date();
+    const yyyy = now.getUTCFullYear();
+    const mm = String(now.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(now.getUTCDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  return `${y}-${m}-${d}`;
+}
+
+export async function listReservas(params: {
+  date?: string;
+  status?: 'PENDENTE' | 'CONFIRMADO' | 'CANCELADO' | 'EXPIRADO';
+  passeioId?: string;
+  telefone?: string;
+  limit?: number;
+}): Promise<AdminReservaRow[]> {
+  const date = (params.date || '').trim() || getBrazilTodayISO();
+  const status = params.status || 'CONFIRMADO';
+  const limit = Math.min(Math.max(params.limit || 80, 1), 200);
+
+  const supabase = getSupabase();
+
+  let q = supabase
+    .from('reservas')
+    .select(
+      'id,status,data_passeio,num_pessoas,valor_total,voucher,created_at,cliente:cliente_id(id,nome,telefone,email),passeio:passeio_id(id,nome,categoria,horarios,local)'
+    )
+    .eq('status', status)
+    .eq('data_passeio', date)
+    .order('created_at', { ascending: true })
+    .limit(limit);
+
+  if (params.passeioId) {
+    q = q.eq('passeio_id', params.passeioId);
+  }
+
+  const { data, error } = await q;
+  if (error || !data) {
+    return [];
+  }
+
+  let rows = data as any as AdminReservaRow[];
+  if (params.telefone) {
+    const digits = String(params.telefone).replace(/\D/g, '');
+    rows = rows.filter((r) => {
+      const tel = String(r?.cliente?.telefone || '').replace(/\D/g, '');
+      return tel.endsWith(digits) || digits.endsWith(tel);
+    });
+  }
+
+  return rows;
 }

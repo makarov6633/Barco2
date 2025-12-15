@@ -10,6 +10,10 @@ import {
 } from '@/lib/supabase';
 import { sendWhatsAppMessage, formatVoucher, notifyBusiness } from '@/lib/twilio';
 
+export const runtime = 'nodejs';
+export const maxDuration = 60;
+export const dynamic = 'force-dynamic';
+
 function getWebhookToken(req: NextRequest) {
   const auth = req.headers.get('authorization');
   const bearer = auth?.toLowerCase().startsWith('bearer ') ? auth.slice(7) : undefined;

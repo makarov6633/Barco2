@@ -334,19 +334,25 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
           })
         : passeios;
 
+      const data = filtered.map(p => ({
+        id: p.id,
+        nome: p.nome,
+        categoria: p.categoria,
+        descricao: p.descricao ? String(p.descricao).slice(0, 280) : null,
+        local: p.local,
+        duracao: p.duracao,
+        preco_min: p.preco_min != null ? Number(p.preco_min) : null,
+        preco_max: p.preco_max != null ? Number(p.preco_max) : null,
+        horarios: p.horarios
+      }));
+
+      ctx.conversation.tempData ||= {};
+      ctx.conversation.tempData.optionIds = data.slice(0, 12).map((p) => p.id);
+      ctx.conversation.tempData.optionList = data.slice(0, 12).map((p) => p.nome);
+
       return {
         success: true,
-        data: filtered.map(p => ({
-          id: p.id,
-          nome: p.nome,
-          categoria: p.categoria,
-          descricao: p.descricao ? String(p.descricao).slice(0, 280) : null,
-          local: p.local,
-          duracao: p.duracao,
-          preco_min: p.preco_min != null ? Number(p.preco_min) : null,
-          preco_max: p.preco_max != null ? Number(p.preco_max) : null,
-          horarios: p.horarios
-        }))
+        data
       };
     }
 
@@ -359,19 +365,25 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
       const passeios = await getAllPasseios();
       const matches = bestPasseioMatches(passeios, termo);
 
+      const data = matches.map(p => ({
+        id: p.id,
+        nome: p.nome,
+        categoria: p.categoria,
+        descricao: p.descricao ? String(p.descricao).slice(0, 280) : null,
+        local: p.local,
+        duracao: p.duracao,
+        preco_min: p.preco_min != null ? Number(p.preco_min) : null,
+        preco_max: p.preco_max != null ? Number(p.preco_max) : null,
+        horarios: p.horarios
+      }));
+
+      ctx.conversation.tempData ||= {};
+      ctx.conversation.tempData.optionIds = data.slice(0, 12).map((p) => p.id);
+      ctx.conversation.tempData.optionList = data.slice(0, 12).map((p) => p.nome);
+
       return {
         success: true,
-        data: matches.map(p => ({
-          id: p.id,
-          nome: p.nome,
-          categoria: p.categoria,
-          descricao: p.descricao ? String(p.descricao).slice(0, 280) : null,
-          local: p.local,
-          duracao: p.duracao,
-          preco_min: p.preco_min != null ? Number(p.preco_min) : null,
-          preco_max: p.preco_max != null ? Number(p.preco_max) : null,
-          horarios: p.horarios
-        }))
+        data
       };
     }
 
@@ -509,6 +521,54 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
       const reservaId = String(params?.reserva_id ?? params?.reservaId ?? ctx.conversation.tempData?.reservaId ?? '').trim();
       const tipo = pickPaymentType(params);
 
+      const includePixPayload =
+        params?.incluir_pix === true ||
+        params?.include_pix === true ||
+        params?.incluir_copia_cola === true ||
+        String(params?.incluir_pix ?? params?.include_pix ?? params?.incluir_copia_cola ?? '').toLowerCase() === 'true';
+
+      if (!reservaId) {
+        return { success: false, error: { code: 'missing_fields', message: 'Faltam dados para gerar pagamento.', missing: ['reserva_id'] } };
+      }
+
+      const cobrancaExistente = await getPendingCobrancaByReservaId(reservaId, tipo);
+      if (cobrancaExistente) {
+        let invoiceUrl: string | null = null;
+        if (cobrancaExistente.asaas_id) {
+          try {
+            const payment = await getAsaasPayment(cobrancaExistente.asaas_id);
+            invoiceUrl = payment?.invoiceUrl || null;
+          } catch {
+            invoiceUrl = null;
+          }
+        }
+
+        return {
+          success: true,
+          data: {
+            status: cobrancaExistente.status,
+            tipo: cobrancaExistente.tipo,
+            valor: cobrancaExistente.valor,
+            vencimento: cobrancaExistente.vencimento,
+            pix:
+              cobrancaExistente.tipo === 'PIX'
+                ? {
+                    link: invoiceUrl,
+                    copia_cola: includePixPayload ? cobrancaExistente.pix_copiacola : undefined
+                  }
+                : undefined,
+            boleto:
+              cobrancaExistente.tipo === 'BOLETO'
+                ? {
+                    url: cobrancaExistente.boleto_url,
+                    vencimento: cobrancaExistente.vencimento,
+                    link: invoiceUrl
+                  }
+                : undefined
+          }
+        };
+      }
+
       const cpfInput = String(
         params?.cpf ??
           params?.cpf_cnpj ??
@@ -543,20 +603,11 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
         };
       }
 
-      const includePixPayload =
-        params?.incluir_pix === true ||
-        params?.include_pix === true ||
-        params?.incluir_copia_cola === true ||
-        String(params?.incluir_pix ?? params?.include_pix ?? params?.incluir_copia_cola ?? '').toLowerCase() === 'true';
-
       ctx.conversation.tempData ||= {};
       if (cpfDigits) ctx.conversation.tempData.cpf = cpfDigits;
       if (email) ctx.conversation.tempData.email = email;
 
-      const missing = getMissing([
-        ['reserva_id', reservaId],
-        ['cpf', cpfDigits]
-      ]);
+      const missing = getMissing([['cpf', cpfDigits]]);
       if (tipo === 'BOLETO') {
         missing.push(...getMissing([['email', email]]));
       }
@@ -604,43 +655,6 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
           data: {
             status: 'CONFIRMADO',
             message: 'Reserva já está confirmada.'
-          }
-        };
-      }
-
-      const cobrancaExistente = await getPendingCobrancaByReservaId(reservaId, tipo);
-      if (cobrancaExistente) {
-        let invoiceUrl: string | null = null;
-        if (cobrancaExistente.asaas_id) {
-          try {
-            const payment = await getAsaasPayment(cobrancaExistente.asaas_id);
-            invoiceUrl = payment?.invoiceUrl || null;
-          } catch {
-            invoiceUrl = null;
-          }
-        }
-
-        return {
-          success: true,
-          data: {
-            status: cobrancaExistente.status,
-            tipo: cobrancaExistente.tipo,
-            valor: cobrancaExistente.valor,
-            vencimento: cobrancaExistente.vencimento,
-            pix:
-              cobrancaExistente.tipo === 'PIX'
-                ? {
-                    link: invoiceUrl,
-                    copia_cola: includePixPayload ? cobrancaExistente.pix_copiacola : undefined
-                  }
-                : undefined,
-            boleto:
-              cobrancaExistente.tipo === 'BOLETO'
-                ? {
-                    url: cobrancaExistente.boleto_url,
-                    vencimento: cobrancaExistente.vencimento
-                  }
-                : undefined
           }
         };
       }
