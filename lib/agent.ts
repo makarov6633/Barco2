@@ -9,7 +9,7 @@ export async function processMessage(telefone: string, message: string): Promise
     const userMessage = (message || '').trim();
 
     if (!userMessage) {
-      return 'Me manda sua dúvida em uma frase rapidinho 😊';
+      return 'Por favor, envie sua solicitação em texto para eu te ajudar.';
     }
 
     const response = await runAgentLoop({ telefone, userMessage, context });
@@ -23,10 +23,10 @@ export async function processMessage(telefone: string, message: string): Promise
     }
 
     await saveConversationContext(context);
-    console.log(`✅ Respondido em ${Date.now() - startTime}ms`);
+    console.log(`Respondido em ${Date.now() - startTime}ms`);
     return response;
   } catch (error) {
-    console.error('❌ Erro ao processar mensagem:', error);
-    return 'Ops, deu um probleminha aqui 😅\nPode mandar de novo?';
+    console.error('Erro ao processar mensagem:', error);
+    return 'Desculpe, tive um problema técnico. Pode enviar novamente sua mensagem, por favor?';
   }
 }

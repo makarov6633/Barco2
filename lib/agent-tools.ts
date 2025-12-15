@@ -135,9 +135,12 @@ export function normalizeDateToISO(input?: string) {
   const lower = normalizeString(raw);
   const today = getBrazilTodayISO();
 
-  if (lower === 'hoje') return today;
-  if (lower === 'amanha' || lower === 'amanhã') return addDaysISO(today, 1);
-  if (lower === 'depois de amanha' || lower === 'depois de amanhã') return addDaysISO(today, 2);
+  const hasWord = (w: string) => new RegExp(`\\b${w}\\b`, 'i').test(lower);
+
+  if (hasWord('hoje')) return today;
+
+  if (lower.includes('depois de amanha')) return addDaysISO(today, 2);
+  if (lower.includes('amanha')) return addDaysISO(today, 1);
 
   const isoMatch = raw.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
   if (isoMatch) return isoMatch[0];
@@ -153,6 +156,43 @@ export function normalizeDateToISO(input?: string) {
       yyyy = `20${yyyy}`;
     }
     return `${yyyy}-${mm}-${dd}`;
+  }
+
+  const weekdays: Array<{ dow: number; tokens: string[] }> = [
+    { dow: 1, tokens: ['segunda', 'segunda feira'] },
+    { dow: 2, tokens: ['terca', 'terca feira'] },
+    { dow: 3, tokens: ['quarta', 'quarta feira'] },
+    { dow: 4, tokens: ['quinta', 'quinta feira'] },
+    { dow: 5, tokens: ['sexta', 'sexta feira'] },
+    { dow: 6, tokens: ['sabado'] },
+    { dow: 0, tokens: ['domingo'] }
+  ];
+
+  let targetDow: number | undefined;
+  for (const w of weekdays) {
+    if (w.tokens.some(t => lower.includes(t))) {
+      targetDow = w.dow;
+      break;
+    }
+  }
+
+  if (targetDow != null) {
+    const [y, m, d] = today.split('-').map(n => parseInt(n, 10));
+    const base = new Date(Date.UTC(y, m - 1, d));
+    const currentDow = base.getUTCDay();
+
+    let delta = (targetDow - currentDow + 7) % 7;
+
+    const wantsNext =
+      lower.includes('que vem') ||
+      lower.includes('proximo') ||
+      lower.includes('proxima') ||
+      lower.includes('prx') ||
+      lower.includes('prox');
+
+    if (delta === 0 && wantsNext) delta = 7;
+
+    return addDaysISO(today, delta);
   }
 
   return undefined;

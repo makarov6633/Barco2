@@ -35,7 +35,7 @@ function buildSummaryMessage(params: { date: string; rows: any[]; passeioId?: st
 
   const total = rows.reduce((acc, r) => acc + (Number(r.valor_total) || 0), 0);
 
-  const header = `📋 Reservas CONFIRMADAS\n📅 ${date}\n✅ ${rows.length} reserva(s)\n💰 Total: R$ ${currencyBR(total)}\n`;
+  const header = `Reservas CONFIRMADAS\nData: ${date}\n${rows.length} reserva(s)\nTotal: R$ ${currencyBR(total)}\n`;
 
   if (!rows.length) {
     return `${header}\nSem reservas confirmadas para hoje.`;
