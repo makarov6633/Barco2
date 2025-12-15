@@ -3,8 +3,9 @@ import dotenv from 'dotenv';
 dotenv.config({ path: '/project/workspace/.env.local', override: true });
 dotenv.config({ path: '/project/workspace/makarov6633/Barco2/.env.local', override: true });
 
-process.env.TWILIO_DISABLE = 'true';
-process.env.NODE_ENV = process.env.NODE_ENV || 'production';
+const env = process.env as Record<string, string | undefined>;
+env.TWILIO_DISABLE = 'true';
+if (!env.NODE_ENV) env.NODE_ENV = 'production';
 
 import { processMessage } from '../lib/agent';
 

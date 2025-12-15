@@ -3,8 +3,9 @@ import dotenv from 'dotenv';
 dotenv.config({ path: '/project/workspace/.env.local', override: true });
 dotenv.config({ path: '/project/workspace/makarov6633/Barco2/.env.local', override: true });
 
-process.env.TWILIO_DISABLE = 'true';
-process.env.NODE_ENV = 'production';
+const env = process.env as Record<string, string | undefined>;
+env.TWILIO_DISABLE = 'true';
+env.NODE_ENV = 'production';
 
 import { executeTool } from '../lib/agent-tools';
 import type { ConversationContext } from '../lib/supabase';
