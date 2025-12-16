@@ -609,11 +609,11 @@ function updateSlotsFromUserMessage(context: ConversationContext, userMessage: s
   if (name && !context.nome) context.nome = name;
 }
 
-function handleOptionSelection(context: ConversationContext, userMessage: string) {
+function handleOptionSelection(context: ConversationContext, userMessage: string): boolean {
   const ids = Array.isArray(context.tempData?.optionIds) ? context.tempData?.optionIds : [];
   const options = Array.isArray(context.tempData?.optionList) ? context.tempData?.optionList : [];
   const rawOptions = Array.isArray((context.tempData as any)?.optionRawList) ? (context.tempData as any).optionRawList : [];
-  if (!ids.length) return;
+  if (!ids.length) return false;
 
   let idx = extractOptionIndexStrict(userMessage, ids.length);
 
@@ -626,7 +626,7 @@ function handleOptionSelection(context: ConversationContext, userMessage: string
     }
   }
 
-  if (idx == null) return;
+  if (idx == null) return false;
 
   context.tempData ||= {};
   context.tempData.passeioId = ids[idx - 1];
@@ -636,11 +636,33 @@ function handleOptionSelection(context: ConversationContext, userMessage: string
   delete (context.tempData as any).optionRawList;
   delete context.tempData.optionList;
 
-  context.conversationHistory.push({
-    role: 'system',
-    content:
-      'INSTRUÇÃO: O cliente escolheu um passeio. Use o passeio selecionado e o estado extraído para coletar apenas o que estiver faltando e então criar a reserva.'
-  });
+  return true;
+}
+
+function buildPostSelectionResponse(context: ConversationContext): string {
+  const passeio = context.tempData?.passeioNome || context.tempData?.passeio || 'o passeio';
+  const nome = context.nome;
+  const data = context.tempData?.data;
+  const pessoas = context.tempData?.numPessoas;
+
+  const missing: string[] = [];
+  if (!nome) missing.push('seu nome');
+  if (!data) missing.push('a data');
+  if (pessoas == null) missing.push('quantas pessoas');
+
+  if (missing.length === 0) {
+    return `Perfeito! Vou criar a reserva de ${passeio}. Um momento.`;
+  }
+
+  if (missing.length === 3) {
+    return `Escolheu ${passeio}. Preciso de: seu nome, data e quantas pessoas.`;
+  }
+
+  if (missing.length === 1) {
+    return `Escolheu ${passeio}. Só falta: ${missing[0]}.`;
+  }
+
+  return `Escolheu ${passeio}. Faltam: ${missing.join(', ')}.`;
 }
 
 type PasseiosPrefetchPlan = { should: boolean; termo?: string; wantsAll?: boolean };
@@ -777,7 +799,13 @@ export async function runAgentLoop(params: {
   context.conversationHistory.push({ role: 'user', content: userMessage });
 
   updateSlotsFromUserMessage(context, userMessage);
-  handleOptionSelection(context, userMessage);
+  const justSelected = handleOptionSelection(context, userMessage);
+
+  if (justSelected) {
+    const directReply = buildPostSelectionResponse(context);
+    context.conversationHistory.push({ role: 'assistant', content: directReply });
+    return directReply;
+  }
 
   const allowedTools = new Set<ToolName>([
     'consultar_passeios',
