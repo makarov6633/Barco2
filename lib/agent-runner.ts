@@ -628,13 +628,22 @@ function handleOptionSelection(context: ConversationContext, userMessage: string
 
   if (idx == null) return false;
 
+  const selectedId = ids[idx - 1];
+  if (!selectedId) return false;
+
   context.tempData ||= {};
-  context.tempData.passeioId = ids[idx - 1];
+  context.tempData.passeioId = selectedId;
   context.tempData.passeioNome = (rawOptions.length === ids.length ? rawOptions[idx - 1] : undefined) || options[idx - 1];
 
-  delete context.tempData.optionIds;
-  delete (context.tempData as any).optionRawList;
-  delete context.tempData.optionList;
+  // If fallback to formatted option string, clean the price
+  // preserve hyphen (-) in names like "Passeio - Roteiro X", only split on em/en dashes used for price
+  if (context.tempData.passeioNome && (context.tempData.passeioNome.includes('—') || context.tempData.passeioNome.includes('–'))) {
+     context.tempData.passeioNome = context.tempData.passeioNome.split(/(?:—|–)/)[0].trim();
+  }
+
+  // delete context.tempData.optionIds;
+  // delete (context.tempData as any).optionRawList;
+  // delete context.tempData.optionList;
 
   return true;
 }
@@ -792,6 +801,8 @@ export async function runAgentLoop(params: {
   context: ConversationContext;
 }) {
   const { telefone, userMessage, context } = params;
+  const loopStartTime = Date.now();
+  const GLOBAL_TIMEOUT_MS = 40000;
 
   context.conversationHistory ||= [];
   context.tempData ||= {};
@@ -817,13 +828,23 @@ export async function runAgentLoop(params: {
     'cancelar_reserva'
   ]);
 
-  const maxSteps = 16;
+  const maxSteps = 6;
   let hasToolResultThisRun = false;
 
   const prefetch = getPasseiosPrefetchPlan(userMessage, context);
   if (prefetch.should) {
     const toolParams = prefetch.termo ? { termo: prefetch.termo } : {};
-    const toolResult = await executeTool('consultar_passeios', toolParams, { telefone, conversation: context });
+    let toolResult: any;
+    try {
+       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Tool timeout')), 8000));
+       toolResult = await Promise.race([
+         executeTool('consultar_passeios', toolParams, { telefone, conversation: context }),
+         timeoutPromise
+       ]);
+    } catch {
+       toolResult = { success: false, error: { message: 'Timeout busque novamente' } };
+    }
+
     context.conversationHistory.push({
       role: 'system',
       content: `<tool_result name="consultar_passeios">${JSON.stringify(toolResult)}</tool_result>`
@@ -835,6 +856,10 @@ export async function runAgentLoop(params: {
   }
 
   for (let step = 0; step < maxSteps; step++) {
+    if (Date.now() - loopStartTime > GLOBAL_TIMEOUT_MS) {
+       return 'Desculpe, a operação demorou muito. Poderia tentar novamente?';
+    }
+
     const messages = buildMessages(context);
     const assistant = await groqChat({ messages, temperature: 0.18, max_tokens: 380 });
 
@@ -907,7 +932,20 @@ export async function runAgentLoop(params: {
     context.conversationHistory.push({ role: 'assistant', content: assistant });
 
     const toolParams = enrichToolParams(name, first.params || {}, context);
-    const toolResult = await executeTool(name, toolParams, { telefone, conversation: context });
+
+    let toolResult: any;
+    try {
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Tool execution timed out')), 10000));
+      toolResult = await Promise.race([
+        executeTool(name, toolParams, { telefone, conversation: context }),
+        timeoutPromise
+      ]);
+    } catch (e: any) {
+      toolResult = {
+        success: false,
+        error: { code: 'timeout', message: 'A ferramenta demorou muito para responder.' }
+      };
+    }
 
     context.conversationHistory.push({
       role: 'system',

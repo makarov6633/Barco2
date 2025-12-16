@@ -66,8 +66,8 @@ export async function groqChat(params: {
   const groq = getGroqClient();
 
   const model = params.model || process.env.GROQ_REASONING_MODEL || 'deepseek-r1-distill-llama-70b';
-  const maxRetries = getEnvInt('GROQ_MAX_RETRIES', 3);
-  const timeoutMs = getEnvInt('GROQ_TIMEOUT_MS', 30000);
+  const maxRetries = getEnvInt('GROQ_MAX_RETRIES', 1);
+  const timeoutMs = getEnvInt('GROQ_TIMEOUT_MS', 12000);
 
   let lastErr: any;
 
@@ -90,7 +90,16 @@ export async function groqChat(params: {
       } catch (err: any) {
         const msg = String(err?.message || '').toLowerCase();
         if (msg.includes('signal') || msg.includes('unexpected') || msg.includes('unknown')) {
-          completion = await (groq.chat.completions.create as any)(payload);
+           // If we are retrying a weird signal error, we MUST still respect a timeout, 
+           // otherwise we risk hanging forever. We'll use a slightly shorter fallback timeout 
+           // for this second-chance call to ensure we don't blow the budget.
+           const fallbackController = new AbortController();
+           const fallbackTimer = setTimeout(() => fallbackController.abort(), 10000);
+           try {
+             completion = await (groq.chat.completions.create as any)(payload, { signal: fallbackController.signal });
+           } finally {
+             clearTimeout(fallbackTimer);
+           }
         } else {
           throw err;
         }
