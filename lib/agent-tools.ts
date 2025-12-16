@@ -95,6 +95,34 @@ function normalizeString(value?: string) {
     .trim();
 }
 
+function applyQueryExpansions(value?: string) {
+  let s = String(value || '');
+  s = s.replace(/\u00A0/g, ' ');
+  s = s.toLowerCase();
+
+  s = s.replace(/\bqto\b/g, 'quanto');
+  s = s.replace(/\bqnt\b/g, 'quanto');
+  s = s.replace(/\bqro\b/g, 'quero');
+  s = s.replace(/\bkero\b/g, 'quero');
+  s = s.replace(/\bvc\b/g, 'voce');
+  s = s.replace(/\bvcs\b/g, 'voces');
+  s = s.replace(/\bpq\b/g, 'porque');
+  s = s.replace(/\bhj\b/g, 'hoje');
+  s = s.replace(/\bamnh\b/g, 'amanha');
+  s = s.replace(/\bdps\b/g, 'depois');
+  s = s.replace(/\bprx\b/g, 'proximo');
+  s = s.replace(/\bprox\b/g, 'proximo');
+  s = s.replace(/\bbarc\b/g, 'barco');
+  s = s.replace(/\bopenbar\b/g, 'open bar');
+  s = s.replace(/\bopenfood\b/g, 'open food');
+
+  return s;
+}
+
+function normalizeQuery(value?: string) {
+  return normalizeString(applyQueryExpansions(value));
+}
+
 function getBrazilTodayISO() {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Sao_Paulo',
@@ -132,7 +160,7 @@ export function normalizeDateToISO(input?: string) {
   const raw = (input || '').trim();
   if (!raw) return undefined;
 
-  const lower = normalizeString(raw);
+  const lower = normalizeQuery(raw);
   const today = getBrazilTodayISO();
 
   const hasWord = (w: string) => new RegExp(`\\b${w}\\b`, 'i').test(lower);
@@ -221,7 +249,7 @@ function getMissing(fields: Array<[string, any]>) {
 }
 
 function bestPasseioMatchesScored(passeios: any[], term: string) {
-  const query = normalizeString(term);
+  const query = normalizeQuery(term);
   if (!query) {
     return { query, tokens: [] as string[], results: [] as Array<{ p: any; score: number; hits: number }> };
   }

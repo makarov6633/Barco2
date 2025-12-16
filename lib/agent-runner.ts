@@ -13,6 +13,173 @@ function normalizeString(value?: string) {
     .trim();
 }
 
+function applyWhatsAppExpansions(value?: string) {
+  let s = String(value || '');
+  s = s.replace(/\u00A0/g, ' ');
+  s = s.toLowerCase();
+
+  s = s.replace(/(^|\s)p\s*\/\s*/g, '$1para ');
+  s = s.replace(/\bqto\b/g, 'quanto');
+  s = s.replace(/\bqnt\b/g, 'quanto');
+  s = s.replace(/\bqtos\b/g, 'quantos');
+  s = s.replace(/\bqtas\b/g, 'quantas');
+  s = s.replace(/\bqro\b/g, 'quero');
+  s = s.replace(/\bkero\b/g, 'quero');
+  s = s.replace(/\bvc\b/g, 'voce');
+  s = s.replace(/\bvcs\b/g, 'voces');
+  s = s.replace(/\bpq\b/g, 'porque');
+  s = s.replace(/\bpfv\b/g, 'por favor');
+  s = s.replace(/\bpls\b/g, 'por favor');
+  s = s.replace(/\bhj\b/g, 'hoje');
+  s = s.replace(/\bamnh\b/g, 'amanha');
+  s = s.replace(/\bdps\b/g, 'depois');
+  s = s.replace(/\bprx\b/g, 'proximo');
+  s = s.replace(/\bprox\b/g, 'proximo');
+  s = s.replace(/\bopenbar\b/g, 'open bar');
+  s = s.replace(/\bopenfood\b/g, 'open food');
+  s = s.replace(/\b(\d{1,2})\s*(?:p|pax)\b/g, '$1 pessoas');
+
+  return s;
+}
+
+function normalizeWhatsApp(value?: string) {
+  return normalizeString(applyWhatsAppExpansions(value));
+}
+
+function tokenizeForMatch(normalized: string) {
+  return Array.from(new Set((normalized || '').split(' ').map(t => t.trim()).filter(t => t.length >= 2)));
+}
+
+function diceCoefficient(a: string, b: string) {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+
+  const n = a.length < 6 || b.length < 6 ? 2 : 3;
+
+  const build = (s: string) => {
+    const m = new Map<string, number>();
+    for (let i = 0; i <= s.length - n; i++) {
+      const g = s.slice(i, i + n);
+      m.set(g, (m.get(g) || 0) + 1);
+    }
+    return m;
+  };
+
+  const ma = build(a);
+  const mb = build(b);
+
+  let overlap = 0;
+  let ca = 0;
+  let cb = 0;
+
+  for (const v of ma.values()) ca += v;
+  for (const v of mb.values()) cb += v;
+
+  for (const [g, countA] of ma.entries()) {
+    const countB = mb.get(g) || 0;
+    overlap += Math.min(countA, countB);
+  }
+
+  if (ca + cb === 0) return 0;
+  return (2 * overlap) / (ca + cb);
+}
+
+function tokenJaccard(a: string, b: string) {
+  const ta = tokenizeForMatch(a);
+  const tb = tokenizeForMatch(b);
+  if (!ta.length || !tb.length) return 0;
+
+  const setA = new Set(ta);
+  const setB = new Set(tb);
+
+  let inter = 0;
+  for (const t of setA) {
+    if (setB.has(t)) inter++;
+  }
+
+  const union = setA.size + setB.size - inter;
+  return union > 0 ? inter / union : 0;
+}
+
+function similarityScore(queryNorm: string, optionNorm: string) {
+  if (!queryNorm || !optionNorm) return 0;
+  if (queryNorm === optionNorm) return 1;
+
+  const q = queryNorm;
+  const o = optionNorm;
+
+  if (q.length >= 4 && (o.includes(q) || q.includes(o))) return 0.95;
+
+  const dice = diceCoefficient(q, o);
+  const jac = tokenJaccard(q, o);
+  return 0.62 * dice + 0.38 * jac;
+}
+
+function bestFuzzyOptionIndex(userMessage: string, options: string[]) {
+  const q = normalizeWhatsApp(userMessage);
+  if (!q) return undefined;
+
+  let bestIdx = -1;
+  let best = 0;
+  let second = 0;
+
+  for (let i = 0; i < options.length; i++) {
+    const o = normalizeWhatsApp(options[i]);
+    const score = similarityScore(q, o);
+    if (score > best) {
+      second = best;
+      best = score;
+      bestIdx = i;
+    } else if (score > second) {
+      second = score;
+    }
+  }
+
+  if (bestIdx < 0) return undefined;
+  return { index: bestIdx, score: best, secondScore: second };
+}
+
+function selectHistoryForPrompt(history: Array<{ role: string; content: string }>): ChatMessage[] {
+  const selected: ChatMessage[] = [];
+
+  let dialogCount = 0;
+  let toolCount = 0;
+
+  for (let i = history.length - 1; i >= 0; i--) {
+    const h = history[i];
+    const role = h?.role as any;
+    const content = typeof h?.content === 'string' ? h.content : '';
+    if (!content) continue;
+
+    if (role === 'assistant') {
+      if (/\[TOOL:/i.test(content)) continue;
+      if (dialogCount >= 12) continue;
+      selected.push({ role, content });
+      dialogCount += 1;
+      continue;
+    }
+
+    if (role === 'user') {
+      if (dialogCount >= 12) continue;
+      selected.push({ role, content });
+      dialogCount += 1;
+      continue;
+    }
+
+    if (role === 'system') {
+      if (/^INSTRUÇÃO:/i.test(content)) continue;
+      if (!/<tool_result\b/i.test(content)) continue;
+      if (toolCount >= 6) continue;
+      selected.push({ role, content });
+      toolCount += 1;
+      continue;
+    }
+  }
+
+  selected.reverse();
+  return selected;
+}
+
 type PaymentType = 'PIX' | 'BOLETO';
 
 type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
@@ -46,7 +213,7 @@ function extractEmail(message: string) {
 }
 
 function detectPaymentType(message: string): PaymentType | undefined {
-  const t = normalizeString(message);
+  const t = normalizeWhatsApp(message);
   if (!t) return undefined;
   const compact = t.replace(/\s+/g, '');
   if (compact.includes('boleto') || compact === 'bol' || compact === 'bolet') return 'BOLETO';
@@ -72,13 +239,20 @@ const NUMBER_WORDS: Record<string, number> = {
 
 function extractNumPessoas(message: string) {
   const raw = String(message || '');
+
+  const compact = raw.match(/\b(\d{1,2})\s*(?:p|pax)\b/i);
+  if (compact) {
+    const n = Number.parseInt(compact[1], 10);
+    if (Number.isFinite(n) && n > 0 && n <= 99) return n;
+  }
+
   const m = raw.match(/\b(\d{1,3})\s*(pessoas?|adultos?|criancas?|crianças?)\b/i);
   if (m) {
     const n = Number.parseInt(m[1], 10);
     if (Number.isFinite(n) && n > 0 && n <= 99) return n;
   }
 
-  const lower = normalizeString(raw);
+  const lower = normalizeWhatsApp(raw);
   for (const [w, n] of Object.entries(NUMBER_WORDS)) {
     if (lower.includes(`${w} pessoa`) || lower.includes(`${w} pessoas`)) return n;
   }
@@ -131,7 +305,7 @@ function extractNameCandidate(message: string) {
 }
 
 function extractOptionIndexStrict(message: string, max: number) {
-  const t = normalizeString(message);
+  const t = normalizeWhatsApp(message);
   if (!t) return undefined;
 
   const m = t.match(/^(?:opcao|op|numero|num|n)?\s*(\d{1,2})$/i);
@@ -144,7 +318,7 @@ function extractOptionIndexStrict(message: string, max: number) {
 }
 
 function looksLikeStall(text: string) {
-  const t = normalizeString(text);
+  const t = normalizeWhatsApp(text);
   if (!t) return false;
 
   const markers = [
@@ -250,18 +424,15 @@ function buildMessages(context: ConversationContext): ChatMessage[] {
   const messages: ChatMessage[] = [{ role: 'system', content: buildSystemPrompt(todayISO) }];
 
   const history = Array.isArray(context.conversationHistory) ? context.conversationHistory : [];
-  const recent = history
-    .slice(-20)
-    .filter((m) => m?.role && typeof m.content === 'string')
-    .filter((m) => m.role === 'system' || m.role === 'user' || m.role === 'assistant') as Array<ChatMessage>;
+  const selected = selectHistoryForPrompt(history);
 
-  if (!recent.length) {
+  if (!selected.length) {
     messages.push({ role: 'system', content: buildStateSummary(context) });
     return messages;
   }
 
-  const last = recent[recent.length - 1];
-  const rest = recent.slice(0, -1);
+  const last = selected[selected.length - 1];
+  const rest = selected.slice(0, -1);
   messages.push(...rest);
   messages.push({ role: 'system', content: buildStateSummary(context) });
   messages.push(last);
@@ -273,7 +444,7 @@ function looksLikeQuestionOrSlotRequest(text: string) {
   if (!text) return false;
   if (text.includes('?')) return true;
 
-  const t = normalizeString(text);
+  const t = normalizeWhatsApp(text);
   const cues = [
     'qual',
     'quando',
@@ -296,7 +467,7 @@ function looksLikeQuestionOrSlotRequest(text: string) {
 }
 
 function shouldForceToolForUserMessage(userMessage: string) {
-  const t = normalizeString(userMessage);
+  const t = normalizeWhatsApp(userMessage);
   if (!t) return false;
 
   const keywords = [
@@ -398,13 +569,15 @@ function updateSlotsFromUserMessage(context: ConversationContext, userMessage: s
   const email = extractEmail(userMessage);
   if (email) context.tempData.email = email;
 
-  const paymentChoice = detectPaymentType(userMessage);
+  const expanded = applyWhatsAppExpansions(userMessage);
+
+  const paymentChoice = detectPaymentType(expanded);
   if (paymentChoice) context.tempData.tipoPagamento = paymentChoice;
 
-  const dateISO = normalizeDateToISO(userMessage);
+  const dateISO = normalizeDateToISO(expanded);
   if (dateISO) context.tempData.data = dateISO;
 
-  const pessoas = extractNumPessoas(userMessage);
+  const pessoas = extractNumPessoas(expanded);
   if (pessoas != null) context.tempData.numPessoas = pessoas;
 
   const name = extractNameCandidate(userMessage);
@@ -413,14 +586,23 @@ function updateSlotsFromUserMessage(context: ConversationContext, userMessage: s
 
 function handleOptionSelection(context: ConversationContext, userMessage: string) {
   const ids = Array.isArray(context.tempData?.optionIds) ? context.tempData?.optionIds : [];
+  const options = Array.isArray(context.tempData?.optionList) ? context.tempData?.optionList : [];
   if (!ids.length) return;
 
-  const idx = extractOptionIndexStrict(userMessage, ids.length);
+  let idx = extractOptionIndexStrict(userMessage, ids.length);
+
+  if (idx == null && options.length === ids.length && options.length > 0) {
+    const match = bestFuzzyOptionIndex(userMessage, options);
+    if (match && match.score >= 0.62 && match.score - (match.secondScore ?? 0) >= 0.08) {
+      idx = match.index + 1;
+    }
+  }
+
   if (idx == null) return;
 
   context.tempData ||= {};
   context.tempData.passeioId = ids[idx - 1];
-  context.tempData.passeioNome = context.tempData.optionList?.[idx - 1];
+  context.tempData.passeioNome = options[idx - 1];
 
   delete context.tempData.optionIds;
   delete context.tempData.optionList;
@@ -428,7 +610,7 @@ function handleOptionSelection(context: ConversationContext, userMessage: string
   context.conversationHistory.push({
     role: 'system',
     content:
-      'INSTRUÇÃO: O cliente escolheu um passeio pelo número. Use o passeio selecionado e o histórico para coletar apenas o que estiver faltando e então criar a reserva.'
+      'INSTRUÇÃO: O cliente escolheu um passeio. Use o passeio selecionado e o estado extraído para coletar apenas o que estiver faltando e então criar a reserva.'
   });
 }
 
