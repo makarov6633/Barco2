@@ -795,6 +795,12 @@ function getPasseiosPrefetchPlan(userMessage: string, context: ConversationConte
   return { should: false };
 }
 
+function stripDeepSeekThink(text: string) {
+  return (text || '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .trim();
+}
+
 export async function runAgentLoop(params: {
   telefone: string;
   userMessage: string;
@@ -861,7 +867,8 @@ export async function runAgentLoop(params: {
     }
 
     const messages = buildMessages(context);
-    const assistant = await groqChat({ messages, temperature: 0.18, max_tokens: 380 });
+    const assistantRaw = await groqChat({ messages, temperature: 0.18, max_tokens: 380 });
+    const assistant = stripDeepSeekThink(assistantRaw);
 
     const calls = parseToolCalls(assistant);
 
@@ -913,46 +920,51 @@ export async function runAgentLoop(params: {
       return cleaned;
     }
 
-    const first = calls[0];
-    const name = (first.name || '').toLowerCase() as ToolName;
-
-    if (!allowedTools.has(name)) {
-      context.conversationHistory.push({ role: 'assistant', content: assistant });
-      context.conversationHistory.push({
-        role: 'system',
-        content: `<tool_result name="${name}">${JSON.stringify({
-          success: false,
-          error: { code: 'unknown_tool', message: 'Ferramenta não permitida.' }
-        })}</tool_result>`
-      });
-      hasToolResultThisRun = true;
-      continue;
-    }
-
+    // Parallel Tool Execution using n8n-style efficiency
+    // We execute ALL valid tool calls found in the response, not just the first one.
+    
     context.conversationHistory.push({ role: 'assistant', content: assistant });
 
-    const toolParams = enrichToolParams(name, first.params || {}, context);
+    const validCalls = calls.filter(c => allowedTools.has(c.name.toLowerCase() as ToolName));
+    const invalidCalls = calls.filter(c => !allowedTools.has(c.name.toLowerCase() as ToolName));
 
-    let toolResult: any;
-    try {
-      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Tool execution timed out')), 10000));
-      toolResult = await Promise.race([
-        executeTool(name, toolParams, { telefone, conversation: context }),
-        timeoutPromise
-      ]);
-    } catch (e: any) {
-      toolResult = {
-        success: false,
-        error: { code: 'timeout', message: 'A ferramenta demorou muito para responder.' }
-      };
+    if (invalidCalls.length > 0) {
+      for (const call of invalidCalls) {
+        context.conversationHistory.push({
+          role: 'system',
+          content: `<tool_result name="${call.name}">${JSON.stringify({
+            success: false,
+            error: { code: 'unknown_tool', message: 'Ferramenta não permitida.' }
+          })}</tool_result>`
+        });
+      }
+      hasToolResultThisRun = true;
     }
 
-    context.conversationHistory.push({
-      role: 'system',
-      content: `<tool_result name="${name}">${JSON.stringify(toolResult)}</tool_result>`
-    });
+    if (validCalls.length > 0) {
+      const promises = validCalls.map(async (call) => {
+        const name = call.name.toLowerCase() as ToolName;
+        const toolParams = enrichToolParams(name, call.params || {}, context);
+        let result: any;
+        try {
+          const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Tool execution timed out')), 10000));
+          result = await Promise.race([
+            executeTool(name, toolParams, { telefone, conversation: context }),
+            timeoutPromise
+          ]);
+        } catch (e: any) {
+          result = {
+            success: false,
+            error: { code: 'timeout', message: 'A ferramenta demorou muito para responder.' }
+          };
+        }
+        return `<tool_result name="${name}">${JSON.stringify(result)}</tool_result>`;
+      });
 
-    hasToolResultThisRun = true;
+      const results = await Promise.all(promises);
+      results.forEach(r => context.conversationHistory.push({ role: 'system', content: r }));
+      hasToolResultThisRun = true;
+    }
   }
 
   return 'Desculpe, tive uma instabilidade. Pode enviar novamente sua solicitação em uma frase?';

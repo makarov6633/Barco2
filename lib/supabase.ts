@@ -211,8 +211,17 @@ export async function getOrCreateCliente(telefone: string, nome?: string): Promi
   }
 }
 
+let cachedAllPasseios: Passeio[] | null = null;
+let cachedAllPasseiosAt = 0;
+const PASSEIOS_CACHE_TTL = 10 * 60 * 1000;
+
 export async function getAllPasseios(): Promise<Passeio[]> {
   try {
+    const now = Date.now();
+    if (cachedAllPasseios && (now - cachedAllPasseiosAt) < PASSEIOS_CACHE_TTL) {
+      return cachedAllPasseios;
+    }
+
     const supabase = getSupabase();
 
     const { data } = await supabase
@@ -220,7 +229,9 @@ export async function getAllPasseios(): Promise<Passeio[]> {
       .select('*')
       .order('nome');
 
-    return (data as any) || [];
+    cachedAllPasseios = (data as any) || [];
+    cachedAllPasseiosAt = now;
+    return cachedAllPasseios;
   } catch (error) {
     console.error('Erro ao buscar passeios:', error);
     return [];
