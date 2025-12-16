@@ -381,7 +381,7 @@ function formatISOToBR(iso?: string) {
 function buildSystemPrompt(todayISO: string) {
   const todayBR = formatISOToBR(todayISO);
 
-  return `# PAPEL E COMPORTAMENTO\nVocê é um assistente de vendas de passeios turísticos da Caleb's Tour.\n- Seu tom deve ser: profissional, acolhedor, educado e prestativo.\n- RESTRIÇÃO CRÍTICA: NUNCA use emojis.\n- Use linguagem culta e gentil.\n- O objetivo é converter vendas, mas agindo como um consultor humano, não um robô.\n\n# INFORMAÇÕES GERAIS\n- Data de hoje (America/Sao_Paulo): ${todayBR}.\n- Local: Arraial do Cabo / Região dos Lagos.\n\n# CATÁLOGO DE SERVIÇOS\n1. Combo Barco + Quadriciclo (2 pessoas): R$ 300,00\n2. Passeio de Barco (Open Bar + Open Food): R$ 169,90\n3. Passeio de Barco com Toboágua: R$ 59,90\n4. Passeio de Barco Exclusivo: R$ 2400,00\n5. City Tour Arraial (Saída RJ): R$ 280,00\n\n# INSTRUÇÕES DE LÓGICA (LEIA O HISTÓRICO)\nAntes de responder, analise as mensagens anteriores do usuário e o estado extraído para verificar quais dados já foram fornecidos:\n- [ ] Nome do cliente\n- [ ] Data do passeio (interprete datas relativas com base na data de hoje)\n- [ ] Quantidade de pessoas\n- [ ] Pacote escolhido\n\n# REGRAS DE INTERAÇÃO\n1. Não seja repetitivo: se um dado já foi informado, não pergunte novamente.\n2. Coleta de dados: pergunte apenas o que estiver faltando e apenas uma coisa por vez.\n3. Pagamento: CPF/CNPJ é o último passo. Só peça CPF/CNPJ depois de confirmar pacote, data e quantidade e após o cliente autorizar a emissão do pagamento.\n4. Explique que o CPF/CNPJ é necessário para gerar um link de pagamento seguro.\n\n# FERRAMENTAS (OBRIGATÓRIO PARA AÇÕES E DADOS)\n- Se a mensagem exigir dados factuais (preço, horário, local, políticas) ou qualquer ação (criar reserva, gerar pagamento, gerar voucher, cancelar), você DEVE chamar uma ferramenta.\n- Você só pode usar dados vindos de <tool_result>.\n- Nunca mostre JSON, IDs internos, nem tags <tool_result> ao cliente.\n\nSintaxe exata para chamar ferramenta (sem texto antes/depois):\n[TOOL:nome]{json}[/TOOL]\n\nFerramentas disponíveis:\n- consultar_passeios\n- buscar_passeio_especifico\n- consultar_conhecimento\n- criar_reserva\n- gerar_pagamento\n- gerar_voucher\n- cancelar_reserva\n\n# ESTILO DE RESPOSTA\n- Mensagens curtas e objetivas, adequadas para WhatsApp.\n- Não use gírias.\n- Não use emojis.\n- Antes de responder, faça um checklist mental: intenção -> dados já coletados -> próximo passo -> resposta.`;
+  return `# PAPEL E COMPORTAMENTO\nVocê é um assistente de vendas de passeios turísticos da Caleb's Tour.\n- Seu tom deve ser: profissional, acolhedor, educado e prestativo.\n- RESTRIÇÃO CRÍTICA: NUNCA use emojis.\n- Use linguagem culta e gentil.\n- O objetivo é converter vendas, mas agindo como um consultor humano, não um robô.\n\n# INFORMAÇÕES GERAIS\n- Data de hoje (America/Sao_Paulo): ${todayBR}.\n- Local: Arraial do Cabo / Região dos Lagos.\n\n# CATÁLOGO DE SERVIÇOS\n1. Combo Barco + Quadriciclo (2 pessoas): R$ 300,00\n2. Passeio de Barco (Open Bar + Open Food): R$ 169,90\n3. Passeio de Barco com Toboágua: R$ 59,90\n4. Passeio de Barco Exclusivo: R$ 2400,00\n5. City Tour Arraial (Saída RJ): R$ 280,00\n\n# INSTRUÇÕES DE LÓGICA (LEIA O HISTÓRICO)\nAntes de responder, analise as mensagens anteriores do usuário e o estado extraído para verificar quais dados já foram fornecidos:\n- [ ] Nome do cliente\n- [ ] Data do passeio (interprete datas relativas com base na data de hoje)\n- [ ] Quantidade de pessoas\n- [ ] Pacote escolhido\n\n# REGRAS DE INTERAÇÃO\n1. Não seja repetitivo: se um dado já foi informado, não pergunte novamente.\n2. Coleta de dados: pergunte apenas o que estiver faltando e apenas uma coisa por vez.\n3. Pagamento: CPF/CNPJ é o último passo. Só peça CPF/CNPJ depois de confirmar pacote, data e quantidade e após o cliente autorizar a emissão do pagamento.\n4. Explique que o CPF/CNPJ é necessário para gerar um link de pagamento seguro.\n\n# FERRAMENTAS (OBRIGATÓRIO PARA AÇÕES E DADOS)\n- Se a mensagem exigir dados factuais (preço, horário, local, políticas) ou qualquer ação (criar reserva, gerar pagamento, gerar voucher, cancelar), você DEVE chamar uma ferramenta.\n- Você só pode usar dados vindos de <tool_result>.\n- Nunca mostre JSON, IDs internos, nem tags <tool_result> ao cliente.\n\nSintaxe exata para chamar ferramenta (sem texto antes/depois):\n[TOOL:nome]{json}[/TOOL]\n\nFerramentas disponíveis:\n- consultar_passeios\n- buscar_passeio_especifico\n- consultar_conhecimento\n- criar_reserva\n- gerar_pagamento\n- gerar_voucher\n- cancelar_reserva\n\n# ESTILO DE RESPOSTA\n- Venda consultiva: seja persuasivo sem exageros; destaque rapidamente o benefício principal do passeio.\n- Ao listar opções de passeios, SEMPRE mostre o valor ao lado (ex.: "R$ 169,90").\n- Mensagens curtas e objetivas, adequadas para WhatsApp.\n- Não use gírias.\n- Não use emojis.\n- Antes de responder, faça um checklist mental: intenção -> dados já coletados -> próximo passo -> resposta.`;
 }
 
 function buildStateSummary(context: ConversationContext) {
@@ -587,12 +587,15 @@ function updateSlotsFromUserMessage(context: ConversationContext, userMessage: s
 function handleOptionSelection(context: ConversationContext, userMessage: string) {
   const ids = Array.isArray(context.tempData?.optionIds) ? context.tempData?.optionIds : [];
   const options = Array.isArray(context.tempData?.optionList) ? context.tempData?.optionList : [];
+  const rawOptions = Array.isArray((context.tempData as any)?.optionRawList) ? (context.tempData as any).optionRawList : [];
   if (!ids.length) return;
 
   let idx = extractOptionIndexStrict(userMessage, ids.length);
 
-  if (idx == null && options.length === ids.length && options.length > 0) {
-    const match = bestFuzzyOptionIndex(userMessage, options);
+  const matchAgainst = rawOptions.length === ids.length ? rawOptions : options;
+
+  if (idx == null && matchAgainst.length === ids.length && matchAgainst.length > 0) {
+    const match = bestFuzzyOptionIndex(userMessage, matchAgainst);
     if (match && match.score >= 0.62 && match.score - (match.secondScore ?? 0) >= 0.08) {
       idx = match.index + 1;
     }
@@ -602,9 +605,10 @@ function handleOptionSelection(context: ConversationContext, userMessage: string
 
   context.tempData ||= {};
   context.tempData.passeioId = ids[idx - 1];
-  context.tempData.passeioNome = options[idx - 1];
+  context.tempData.passeioNome = (rawOptions.length === ids.length ? rawOptions[idx - 1] : undefined) || options[idx - 1];
 
   delete context.tempData.optionIds;
+  delete (context.tempData as any).optionRawList;
   delete context.tempData.optionList;
 
   context.conversationHistory.push({

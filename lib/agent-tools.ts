@@ -123,6 +123,26 @@ function normalizeQuery(value?: string) {
   return normalizeString(applyQueryExpansions(value));
 }
 
+function formatBRL(value?: number | null) {
+  if (value == null || !Number.isFinite(value)) return undefined;
+  return `R$ ${value.toFixed(2).replace('.', ',')}`;
+}
+
+function formatPriceRange(precoMin?: number | null, precoMax?: number | null) {
+  const min = formatBRL(precoMin ?? null);
+  const max = formatBRL(precoMax ?? null);
+
+  if (min && max && min !== max) return `${min} - ${max}`;
+  if (min) return min;
+  if (max) return max;
+  return 'Consulte';
+}
+
+function formatPasseioOptionLine(p: { nome: string; preco_min?: number | null; preco_max?: number | null }) {
+  const price = formatPriceRange(p.preco_min ?? null, p.preco_max ?? null);
+  return `${p.nome} — ${price}`;
+}
+
 function getBrazilTodayISO() {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Sao_Paulo',
@@ -395,7 +415,7 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
       const filtered = termo
         ? passeios.filter(p => {
             const hay = normalizeString(`${p.nome} ${p.categoria || ''} ${p.local || ''} ${p.descricao || ''}`);
-            const q = normalizeString(termo);
+            const q = normalizeQuery(termo);
             const tokens = q.split(' ').filter(t => t.length >= 3);
             if (!tokens.length) return hay.includes(q);
             return tokens.every(t => hay.includes(t));
@@ -416,7 +436,8 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
 
       ctx.conversation.tempData ||= {};
       ctx.conversation.tempData.optionIds = data.slice(0, 12).map((p) => p.id);
-      ctx.conversation.tempData.optionList = data.slice(0, 12).map((p) => p.nome);
+      ctx.conversation.tempData.optionRawList = data.slice(0, 12).map((p) => p.nome);
+      ctx.conversation.tempData.optionList = data.slice(0, 12).map((p) => formatPasseioOptionLine(p));
 
       return {
         success: true,
@@ -447,7 +468,8 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
 
       ctx.conversation.tempData ||= {};
       ctx.conversation.tempData.optionIds = data.slice(0, 12).map((p) => p.id);
-      ctx.conversation.tempData.optionList = data.slice(0, 12).map((p) => p.nome);
+      ctx.conversation.tempData.optionRawList = data.slice(0, 12).map((p) => p.nome);
+      ctx.conversation.tempData.optionList = data.slice(0, 12).map((p) => formatPasseioOptionLine(p));
 
       return {
         success: true,
