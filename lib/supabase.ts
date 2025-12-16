@@ -82,6 +82,7 @@ export interface ConversationContext {
     aguardandoConfirmacaoPagamento?: boolean;
     aguardandoMenuPosReserva?: boolean;
     optionList?: string[];
+    optionRawList?: string[];
     optionIds?: string[];
     reservaId?: string;
     valorTotal?: number;

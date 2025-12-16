@@ -95,6 +95,54 @@ function normalizeString(value?: string) {
     .trim();
 }
 
+function applyQueryExpansions(value?: string) {
+  let s = String(value || '');
+  s = s.replace(/\u00A0/g, ' ');
+  s = s.toLowerCase();
+
+  s = s.replace(/\bqto\b/g, 'quanto');
+  s = s.replace(/\bqnt\b/g, 'quanto');
+  s = s.replace(/\bqro\b/g, 'quero');
+  s = s.replace(/\bkero\b/g, 'quero');
+  s = s.replace(/\bvc\b/g, 'voce');
+  s = s.replace(/\bvcs\b/g, 'voces');
+  s = s.replace(/\bpq\b/g, 'porque');
+  s = s.replace(/\bhj\b/g, 'hoje');
+  s = s.replace(/\bamnh\b/g, 'amanha');
+  s = s.replace(/\bdps\b/g, 'depois');
+  s = s.replace(/\bprx\b/g, 'proximo');
+  s = s.replace(/\bprox\b/g, 'proximo');
+  s = s.replace(/\bbarc\b/g, 'barco');
+  s = s.replace(/\bopenbar\b/g, 'open bar');
+  s = s.replace(/\bopenfood\b/g, 'open food');
+
+  return s;
+}
+
+function normalizeQuery(value?: string) {
+  return normalizeString(applyQueryExpansions(value));
+}
+
+function formatBRL(value?: number | null) {
+  if (value == null || !Number.isFinite(value)) return undefined;
+  return `R$ ${value.toFixed(2).replace('.', ',')}`;
+}
+
+function formatPriceRange(precoMin?: number | null, precoMax?: number | null) {
+  const min = formatBRL(precoMin ?? null);
+  const max = formatBRL(precoMax ?? null);
+
+  if (min && max && min !== max) return `${min} - ${max}`;
+  if (min) return min;
+  if (max) return max;
+  return 'Consulte';
+}
+
+function formatPasseioOptionLine(p: { nome: string; preco_min?: number | null; preco_max?: number | null }) {
+  const price = formatPriceRange(p.preco_min ?? null, p.preco_max ?? null);
+  return `${p.nome} — ${price}`;
+}
+
 function getBrazilTodayISO() {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Sao_Paulo',
@@ -132,12 +180,15 @@ export function normalizeDateToISO(input?: string) {
   const raw = (input || '').trim();
   if (!raw) return undefined;
 
-  const lower = normalizeString(raw);
+  const lower = normalizeQuery(raw);
   const today = getBrazilTodayISO();
 
-  if (lower === 'hoje') return today;
-  if (lower === 'amanha' || lower === 'amanhã') return addDaysISO(today, 1);
-  if (lower === 'depois de amanha' || lower === 'depois de amanhã') return addDaysISO(today, 2);
+  const hasWord = (w: string) => new RegExp(`\\b${w}\\b`, 'i').test(lower);
+
+  if (hasWord('hoje')) return today;
+
+  if (lower.includes('depois de amanha')) return addDaysISO(today, 2);
+  if (lower.includes('amanha')) return addDaysISO(today, 1);
 
   const isoMatch = raw.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
   if (isoMatch) return isoMatch[0];
@@ -153,6 +204,43 @@ export function normalizeDateToISO(input?: string) {
       yyyy = `20${yyyy}`;
     }
     return `${yyyy}-${mm}-${dd}`;
+  }
+
+  const weekdays: Array<{ dow: number; tokens: string[] }> = [
+    { dow: 1, tokens: ['segunda', 'segunda feira'] },
+    { dow: 2, tokens: ['terca', 'terca feira'] },
+    { dow: 3, tokens: ['quarta', 'quarta feira'] },
+    { dow: 4, tokens: ['quinta', 'quinta feira'] },
+    { dow: 5, tokens: ['sexta', 'sexta feira'] },
+    { dow: 6, tokens: ['sabado'] },
+    { dow: 0, tokens: ['domingo'] }
+  ];
+
+  let targetDow: number | undefined;
+  for (const w of weekdays) {
+    if (w.tokens.some(t => lower.includes(t))) {
+      targetDow = w.dow;
+      break;
+    }
+  }
+
+  if (targetDow != null) {
+    const [y, m, d] = today.split('-').map(n => parseInt(n, 10));
+    const base = new Date(Date.UTC(y, m - 1, d));
+    const currentDow = base.getUTCDay();
+
+    let delta = (targetDow - currentDow + 7) % 7;
+
+    const wantsNext =
+      lower.includes('que vem') ||
+      lower.includes('proximo') ||
+      lower.includes('proxima') ||
+      lower.includes('prx') ||
+      lower.includes('prox');
+
+    if (delta === 0 && wantsNext) delta = 7;
+
+    return addDaysISO(today, delta);
   }
 
   return undefined;
@@ -181,7 +269,7 @@ function getMissing(fields: Array<[string, any]>) {
 }
 
 function bestPasseioMatchesScored(passeios: any[], term: string) {
-  const query = normalizeString(term);
+  const query = normalizeQuery(term);
   if (!query) {
     return { query, tokens: [] as string[], results: [] as Array<{ p: any; score: number; hits: number }> };
   }
@@ -327,7 +415,7 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
       const filtered = termo
         ? passeios.filter(p => {
             const hay = normalizeString(`${p.nome} ${p.categoria || ''} ${p.local || ''} ${p.descricao || ''}`);
-            const q = normalizeString(termo);
+            const q = normalizeQuery(termo);
             const tokens = q.split(' ').filter(t => t.length >= 3);
             if (!tokens.length) return hay.includes(q);
             return tokens.every(t => hay.includes(t));
@@ -348,7 +436,8 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
 
       ctx.conversation.tempData ||= {};
       ctx.conversation.tempData.optionIds = data.slice(0, 12).map((p) => p.id);
-      ctx.conversation.tempData.optionList = data.slice(0, 12).map((p) => p.nome);
+      ctx.conversation.tempData.optionRawList = data.slice(0, 12).map((p) => p.nome);
+      ctx.conversation.tempData.optionList = data.slice(0, 12).map((p) => formatPasseioOptionLine(p));
 
       return {
         success: true,
@@ -379,7 +468,8 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
 
       ctx.conversation.tempData ||= {};
       ctx.conversation.tempData.optionIds = data.slice(0, 12).map((p) => p.id);
-      ctx.conversation.tempData.optionList = data.slice(0, 12).map((p) => p.nome);
+      ctx.conversation.tempData.optionRawList = data.slice(0, 12).map((p) => p.nome);
+      ctx.conversation.tempData.optionList = data.slice(0, 12).map((p) => formatPasseioOptionLine(p));
 
       return {
         success: true,

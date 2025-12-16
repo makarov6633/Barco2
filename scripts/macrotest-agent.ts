@@ -143,6 +143,19 @@ async function main() {
       ]
     },
     {
+      name: '03b - Reserva com gíria/abreviação',
+      telefone: `${base}21`,
+      steps: [
+        {
+          user: 'qro reservar barc toboagua amnh 2p meu nome é Joana Silva',
+          expect: (reply) => {
+            assert(reply.length > 0, 'Resposta vazia');
+            assert(containsAny(reply, ['pix', 'boleto', 'pagamento']), 'Esperava conduzir para forma de pagamento');
+          }
+        }
+      ]
+    },
+    {
       name: '04 - English price',
       telefone: `${base}04`,
       steps: [

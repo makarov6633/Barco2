@@ -29,10 +29,10 @@ export async function sendWhatsAppMessage(to: string, message: string): Promise<
       to
     });
 
-    console.log(`✅ Mensagem enviada para ${to}`);
+    console.log(`Mensagem enviada para ${to}`);
     return true;
   } catch (error) {
-    console.error('❌ Erro ao enviar mensagem:', error);
+    console.error('Erro ao enviar mensagem:', error);
     return false;
   }
 }
@@ -49,21 +49,21 @@ export async function notifyBusiness(notification: {
 
     switch (notification.type) {
       case 'NOVA_RESERVA':
-        message = `🔔 *NOVA RESERVA*\n\n👤 ${notification.data.nome}\n📞 ${notification.data.telefone}\n🚤 ${notification.data.passeio}\n📅 ${notification.data.data}\n👥 ${notification.data.numPessoas} pessoa(s)\n💰 R$ ${notification.data.valor?.toFixed(2)}\n🎫 Voucher: ${notification.data.voucher}\n\nStatus: *${notification.data.status}*`;
+        message = `*NOVA RESERVA*\n\nNome: ${notification.data.nome}\nTelefone: ${notification.data.telefone}\nPasseio: ${notification.data.passeio}\nData: ${notification.data.data}\nPessoas: ${notification.data.numPessoas} pessoa(s)\nTotal: R$ ${notification.data.valor?.toFixed(2)}\nVoucher: ${notification.data.voucher}\n\nStatus: *${notification.data.status}*`;
         break;
 
       case 'RECLAMACAO':
-        message = `🚨 *RECLAMAÇÃO URGENTE*\n\n📞 ${notification.data.telefone}\n👤 ${notification.data.nome || 'Cliente'}\n\n💬 "${notification.data.mensagem}"\n\n⚠️ *ATENDER IMEDIATAMENTE!*`;
+        message = `*RECLAMAÇÃO URGENTE*\n\nTelefone: ${notification.data.telefone}\nNome: ${notification.data.nome || 'Cliente'}\n\nMensagem: "${notification.data.mensagem}"\n\nAção: atender imediatamente.`;
         break;
 
       case 'CANCELAMENTO':
-        message = `❌ *CANCELAMENTO*\n\n📞 ${notification.data.telefone}\n🎫 Voucher: ${notification.data.voucher}\n💬 ${notification.data.motivo || 'Sem motivo informado'}`;
+        message = `*CANCELAMENTO*\n\nTelefone: ${notification.data.telefone}\nVoucher: ${notification.data.voucher}\nMotivo: ${notification.data.motivo || 'Sem motivo informado'}`;
         break;
     }
 
     await sendWhatsAppMessage(businessNumber, message);
   } catch (error) {
-    console.error('❌ Erro ao notificar empresa:', error);
+    console.error('Erro ao notificar empresa:', error);
   }
 }
 
@@ -77,5 +77,5 @@ export function formatVoucher(data: {
   valorTotal: number;
   pontoEncontro: string;
 }): string {
-  return `✅ *RESERVA CONFIRMADA!*\n\n🎫 *Voucher:* ${data.voucherCode}\n\n👤 ${data.clienteNome}\n🚤 ${data.passeioNome}\n📅 ${data.data} às ${data.horario}\n👥 ${data.numPessoas} pessoa(s)\n💰 R$ ${data.valorTotal.toFixed(2)}\n\n📍 *Ponto de Encontro:*\n${data.pontoEncontro}\n\n⚠️ *Importante:*\n• Chegar 15 min antes\n• Trazer este voucher\n• Confirmar 1 dia antes\n\n📞 Dúvidas: (22) 99824-9911\n\n_Caleb's Tour - CNPJ 26.096.072/0001-78_`;
+  return `*RESERVA CONFIRMADA*\n\n*Voucher:* ${data.voucherCode}\n\nCliente: ${data.clienteNome}\nPasseio: ${data.passeioNome}\nData: ${data.data} às ${data.horario}\nPessoas: ${data.numPessoas} pessoa(s)\nTotal: R$ ${data.valorTotal.toFixed(2)}\n\n*Ponto de encontro:*\n${data.pontoEncontro}\n\n*Importante:*\n- Chegar 15 min antes\n- Trazer este voucher\n- Confirmar 1 dia antes\n\nDúvidas: (22) 99824-9911\n\nCaleb's Tour - CNPJ 26.096.072/0001-78`;
 }

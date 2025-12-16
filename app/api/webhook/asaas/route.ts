@@ -138,7 +138,7 @@ export async function POST(req: NextRequest) {
           numPessoas: reserva.num_pessoas,
           voucher: voucherCode,
           valor: Number(reserva.valor_total),
-          status: 'PAGO ✅'
+          status: 'PAGO'
         }
       });
 

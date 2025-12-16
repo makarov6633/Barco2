@@ -1,5 +1,5 @@
 import { ConversationContext } from './supabase';
-import { executeTool, ToolName, ToolResult } from './agent-tools';
+import { executeTool, normalizeDateToISO, ToolName } from './agent-tools';
 import { groqChat } from './groq-client';
 import { parseToolCalls, stripToolBlocks } from './agent-toolcall';
 
@@ -13,7 +13,193 @@ function normalizeString(value?: string) {
     .trim();
 }
 
+function applyWhatsAppExpansions(value?: string) {
+  let s = String(value || '');
+  s = s.replace(/\u00A0/g, ' ');
+  s = s.toLowerCase();
+
+  s = s.replace(/(^|\s)p\s*\/\s*/g, '$1para ');
+  s = s.replace(/\bqto\b/g, 'quanto');
+  s = s.replace(/\bqnt\b/g, 'quanto');
+  s = s.replace(/\bqtos\b/g, 'quantos');
+  s = s.replace(/\bqtas\b/g, 'quantas');
+  s = s.replace(/\bqro\b/g, 'quero');
+  s = s.replace(/\bkero\b/g, 'quero');
+  s = s.replace(/\bvc\b/g, 'voce');
+  s = s.replace(/\bvcs\b/g, 'voces');
+  s = s.replace(/\bpq\b/g, 'porque');
+  s = s.replace(/\bpfv\b/g, 'por favor');
+  s = s.replace(/\bpls\b/g, 'por favor');
+  s = s.replace(/\bhj\b/g, 'hoje');
+  s = s.replace(/\bamnh\b/g, 'amanha');
+  s = s.replace(/\bdps\b/g, 'depois');
+  s = s.replace(/\bprx\b/g, 'proximo');
+  s = s.replace(/\bprox\b/g, 'proximo');
+  s = s.replace(/\bopenbar\b/g, 'open bar');
+  s = s.replace(/\bopenfood\b/g, 'open food');
+  s = s.replace(/\b(\d{1,2})\s*(?:p|pax)\b/g, '$1 pessoas');
+
+  return s;
+}
+
+function normalizeWhatsApp(value?: string) {
+  return normalizeString(applyWhatsAppExpansions(value));
+}
+
+function tokenizeForMatch(normalized: string) {
+  return Array.from(new Set((normalized || '').split(' ').map(t => t.trim()).filter(t => t.length >= 2)));
+}
+
+function diceCoefficient(a: string, b: string) {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+
+  const n = a.length < 6 || b.length < 6 ? 2 : 3;
+
+  const build = (s: string) => {
+    const m = new Map<string, number>();
+    for (let i = 0; i <= s.length - n; i++) {
+      const g = s.slice(i, i + n);
+      m.set(g, (m.get(g) || 0) + 1);
+    }
+    return m;
+  };
+
+  const ma = build(a);
+  const mb = build(b);
+
+  let overlap = 0;
+  let ca = 0;
+  let cb = 0;
+
+  for (const v of ma.values()) ca += v;
+  for (const v of mb.values()) cb += v;
+
+  for (const [g, countA] of ma.entries()) {
+    const countB = mb.get(g) || 0;
+    overlap += Math.min(countA, countB);
+  }
+
+  if (ca + cb === 0) return 0;
+  return (2 * overlap) / (ca + cb);
+}
+
+function tokenJaccard(a: string, b: string) {
+  const ta = tokenizeForMatch(a);
+  const tb = tokenizeForMatch(b);
+  if (!ta.length || !tb.length) return 0;
+
+  const setA = new Set(ta);
+  const setB = new Set(tb);
+
+  let inter = 0;
+  for (const t of setA) {
+    if (setB.has(t)) inter++;
+  }
+
+  const union = setA.size + setB.size - inter;
+  return union > 0 ? inter / union : 0;
+}
+
+function similarityScore(queryNorm: string, optionNorm: string) {
+  if (!queryNorm || !optionNorm) return 0;
+  if (queryNorm === optionNorm) return 1;
+
+  const q = queryNorm;
+  const o = optionNorm;
+
+  if (q.length >= 4 && (o.includes(q) || q.includes(o))) return 0.95;
+
+  const dice = diceCoefficient(q, o);
+  const jac = tokenJaccard(q, o);
+  return 0.62 * dice + 0.38 * jac;
+}
+
+function bestFuzzyOptionIndex(userMessage: string, options: string[]) {
+  const q = normalizeWhatsApp(userMessage);
+  if (!q) return undefined;
+
+  let bestIdx = -1;
+  let best = 0;
+  let second = 0;
+
+  for (let i = 0; i < options.length; i++) {
+    const o = normalizeWhatsApp(options[i]);
+    const score = similarityScore(q, o);
+    if (score > best) {
+      second = best;
+      best = score;
+      bestIdx = i;
+    } else if (score > second) {
+      second = score;
+    }
+  }
+
+  if (bestIdx < 0) return undefined;
+  return { index: bestIdx, score: best, secondScore: second };
+}
+
+function selectHistoryForPrompt(history: Array<{ role: string; content: string }>): ChatMessage[] {
+  const selected: ChatMessage[] = [];
+
+  let dialogCount = 0;
+  let toolCount = 0;
+
+  for (let i = history.length - 1; i >= 0; i--) {
+    const h = history[i];
+    const role = h?.role as any;
+    const content = typeof h?.content === 'string' ? h.content : '';
+    if (!content) continue;
+
+    if (role === 'assistant') {
+      if (/\[TOOL:/i.test(content)) continue;
+      if (dialogCount >= 12) continue;
+      selected.push({ role, content });
+      dialogCount += 1;
+      continue;
+    }
+
+    if (role === 'user') {
+      if (dialogCount >= 12) continue;
+      selected.push({ role, content });
+      dialogCount += 1;
+      continue;
+    }
+
+    if (role === 'system') {
+      if (/^INSTRUÇÃO:/i.test(content)) continue;
+      if (!/<tool_result\b/i.test(content)) continue;
+      if (toolCount >= 6) continue;
+      selected.push({ role, content });
+      toolCount += 1;
+      continue;
+    }
+  }
+
+  selected.reverse();
+  return selected;
+}
+
 type PaymentType = 'PIX' | 'BOLETO';
+
+type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
+
+function stripEmojis(text: string) {
+  const raw = String(text || '');
+  try {
+    return raw
+      .replace(/[\p{Extended_Pictographic}]/gu, '')
+      .replace(/[\uFE0F\u200D]/g, '')
+      .replace(/\s+\n/g, '\n')
+      .trim();
+  } catch {
+    return raw
+      .replace(/[\u2190-\u21FF\u2300-\u23FF\u2460-\u24FF\u2600-\u27BF\u2900-\u297F\u2B00-\u2BFF\uD83C-\uDBFF\uDC00-\uDFFF]/g, '')
+      .replace(/[\uFE0F\u200D]/g, '')
+      .replace(/\s+\n/g, '\n')
+      .trim();
+  }
+}
 
 function extractCpfCnpjDigits(message: string) {
   const digits = String(message || '').replace(/\D/g, '');
@@ -27,332 +213,124 @@ function extractEmail(message: string) {
 }
 
 function detectPaymentType(message: string): PaymentType | undefined {
-  const t = normalizeString(message);
+  const t = normalizeWhatsApp(message);
+  if (!t) return undefined;
+  const compact = t.replace(/\s+/g, '');
+  if (compact.includes('boleto') || compact === 'bol' || compact === 'bolet') return 'BOLETO';
+  if (compact.includes('pix') || /^p?ix$/.test(compact)) return 'PIX';
+  return undefined;
+}
+
+const NUMBER_WORDS: Record<string, number> = {
+  uma: 1,
+  um: 1,
+  duas: 2,
+  dois: 2,
+  tres: 3,
+  treses: 3,
+  quatro: 4,
+  cinco: 5,
+  seis: 6,
+  sete: 7,
+  oito: 8,
+  nove: 9,
+  dez: 10
+};
+
+function extractNumPessoas(message: string) {
+  const raw = String(message || '');
+
+  const compact = raw.match(/\b(\d{1,2})\s*(?:p|pax)\b/i);
+  if (compact) {
+    const n = Number.parseInt(compact[1], 10);
+    if (Number.isFinite(n) && n > 0 && n <= 99) return n;
+  }
+
+  const m = raw.match(/\b(\d{1,3})\s*(pessoas?|adultos?|criancas?|crianças?)\b/i);
+  if (m) {
+    const n = Number.parseInt(m[1], 10);
+    if (Number.isFinite(n) && n > 0 && n <= 99) return n;
+  }
+
+  const lower = normalizeWhatsApp(raw);
+  for (const [w, n] of Object.entries(NUMBER_WORDS)) {
+    if (lower.includes(`${w} pessoa`) || lower.includes(`${w} pessoas`)) return n;
+  }
+
+  return undefined;
+}
+
+function titleCaseName(value: string) {
+  const parts = String(value || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .split(' ')
+    .filter(Boolean);
+
+  if (!parts.length) return '';
+
+  return parts
+    .map((p) => {
+      const low = p.toLowerCase();
+      if (['da', 'de', 'do', 'das', 'dos', 'e'].includes(low)) return low;
+      return low.charAt(0).toUpperCase() + low.slice(1);
+    })
+    .join(' ')
+    .trim();
+}
+
+function extractNameCandidate(message: string) {
+  const raw = String(message || '').trim();
+  if (!raw) return undefined;
+
+  const explicit = raw.match(/\b(?:meu nome e|meu nome é|me chamo|sou o|sou a)\s+([^.,\n]+)/i);
+  if (explicit?.[1]) {
+    const name = titleCaseName(explicit[1]);
+    if (name.split(' ').length >= 2) return name;
+  }
+
+  const firstPart = raw.split(',')[0]?.trim();
+  if (!firstPart) return undefined;
+  if (/\d/.test(firstPart)) return undefined;
+
+  const words = firstPart.replace(/\s+/g, ' ').split(' ').filter(Boolean);
+  if (words.length < 2 || words.length > 5) return undefined;
+
+  const norm = normalizeString(firstPart);
+  const blocked = ['passeio', 'barco', 'buggy', 'quadriciclo', 'mergulho', 'transfer', 'city', 'combo', 'open', 'food', 'toboagua', 'toboagua'];
+  if (blocked.some((k) => norm.includes(k))) return undefined;
+
+  const name = titleCaseName(firstPart);
+  return name.split(' ').length >= 2 ? name : undefined;
+}
+
+function extractOptionIndexStrict(message: string, max: number) {
+  const t = normalizeWhatsApp(message);
   if (!t) return undefined;
 
-  const compact = t.replace(/\s+/g, '');
+  const m = t.match(/^(?:opcao|op|numero|num|n)?\s*(\d{1,2})$/i);
+  if (!m?.[1]) return undefined;
 
-  if (compact.includes('boleto') || compact === 'bol' || compact === 'bolet') return 'BOLETO';
-
-  if (compact.includes('pix') || /^p?ix$/.test(compact)) return 'PIX';
-
-  return undefined;
-}
-
-function looksLikePaymentPing(message: string) {
-  const t = normalizeString(message);
-  if (!t) return false;
-  const ping = t.replace(/\?+$/, '').trim();
-  if (!ping) return false;
-
-  if (ping === 'ok') return true;
-
-  const starters = ['conseguiu', 'consegue', 'cade'];
-  return starters.some((s) => ping === s || ping.startsWith(`${s} `));
-}
-
-function looksLikeYes(message: string) {
-  const t = normalizeString(message);
-  if (!t) return false;
-
-  if (/^(sim|pode|ok|okay|blz|beleza|claro|manda|vai|bora|gera|gerar|confirmo|confirmar)\b/.test(t)) return true;
-  if (t.includes('pode gerar') || t.includes('pode mandar') || t.includes('pode enviar')) return true;
-  return false;
-}
-
-function looksLikeNo(message: string) {
-  const t = normalizeString(message);
-  if (!t) return false;
-
-  if (/^(nao|negativo|cancela|cancelar|pare|espera|aguarda|depois)\b/.test(t)) return true;
-  if (t.includes('nao quero') || t.includes('nao pode')) return true;
-  return false;
-}
-
-function buildPagamentoConfirmacaoMessage(context: ConversationContext, tipo: PaymentType) {
-  const passeio = context.tempData?.passeioNome;
-  const data = context.tempData?.data;
-  const pessoas = context.tempData?.numPessoas;
-  const valor = context.tempData?.valorTotal;
-
-  const lines: string[] = [];
-  if (passeio) lines.push(`• Passeio: ${passeio}`);
-  if (data) lines.push(`• Data: ${data}`);
-  if (pessoas) lines.push(`• Pessoas: ${pessoas}`);
-  if (valor != null) lines.push(`• Total: R$ ${formatCurrencyBR(Number(valor))}`);
-
-  const details = lines.length ? `\n${lines.join('\n')}\n` : '\n';
-  return `Perfeito! Antes de eu gerar o ${tipo}, só confirma pra mim:${details}\nPosso gerar o ${tipo} agora? Responda SIM ou NÃO.`;
-}
-
-function formatCurrencyBR(value: number) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return '0,00';
-  return n.toFixed(2).replace('.', ',');
-}
-
-function extractSingleDigitChoice(message: string) {
-  const digits = String(message || '').replace(/\D/g, '');
-  if (digits.length !== 1) return undefined;
-  const n = Number.parseInt(digits, 10);
-  if (n === 1 || n === 2) return n;
-  return undefined;
-}
-
-function buildMenuPosReservaText() {
-  return '1 - Continuar pesquisando outros passeios\n2 - Emitir boleto ou pix';
-}
-
-function buildMenuPosReservaPrompt() {
-  return `O que você quer fazer agora?\n${buildMenuPosReservaText()}`;
-}
-
-function formatPriceRange(p: any) {
-  const min = p?.preco_min;
-  const max = p?.preco_max;
-
-  if (min == null && max == null) return 'Consulte';
-  if (min != null && max != null) {
-    const a = Number(min);
-    const b = Number(max);
-    if (Number.isFinite(a) && Number.isFinite(b) && a !== b) {
-      return `R$ ${formatCurrencyBR(a)} - R$ ${formatCurrencyBR(b)}`;
-    }
-    const v = Number.isFinite(a) ? a : Number(b);
-    return `R$ ${formatCurrencyBR(v)}`;
-  }
-
-  const v = Number(min ?? max);
-  if (!Number.isFinite(v)) return 'Consulte';
-  return `R$ ${formatCurrencyBR(v)}`;
-}
-
-function formatPasseiosOffer(data: any[]) {
-  const list = Array.isArray(data) ? data.slice(0, 8) : [];
-  if (!list.length) {
-    return 'Não achei nenhum passeio agora. Quer que eu busque por: barco, buggy, quadriciclo, mergulho...?';
-  }
-
-  const lines = list.map((p, idx) => {
-    const price = formatPriceRange(p);
-    return `${idx + 1} - ${p.nome} — ${price}`;
-  });
-
-  return `Opções:\n${lines.join('\n')}\n\nResponda com o número.`;
-}
-
-function extractOptionIndex(message: string, max: number) {
-  const digits = String(message || '').replace(/\D/g, '');
-  if (!digits) return undefined;
-  const n = Number.parseInt(digits, 10);
+  const n = Number.parseInt(m[1], 10);
   if (!Number.isFinite(n)) return undefined;
-  if (n >= 1 && n <= max) return n;
-  return undefined;
-}
-
-function formatReservaCriadaMenu(context: ConversationContext, data: any) {
-  const passeio = data?.passeio_nome || context.tempData?.passeioNome || 'Passeio';
-  const dataPasseio = data?.data || context.tempData?.data;
-  const pessoas = data?.num_pessoas ?? context.tempData?.numPessoas;
-  const valor = data?.valor_total ?? context.tempData?.valorTotal;
-
-  const lines: string[] = [];
-  if (passeio) lines.push(`🚤 ${passeio}`);
-  if (dataPasseio) lines.push(`📅 ${dataPasseio}`);
-  if (pessoas != null) lines.push(`👥 ${pessoas} pessoa(s)`);
-  if (valor != null) lines.push(`💰 Total: R$ ${formatCurrencyBR(Number(valor))}`);
-
-  const resumo = lines.length ? `${lines.join('\n')}\n\n` : '';
-  return `Reserva criada! 🎉\n${resumo}${buildMenuPosReservaPrompt()}`;
-}
-
-function formatGerarPagamentoReply(result: ToolResult, tipo: PaymentType) {
-  if (!result.success) {
-    const code = result.error.code || 'error';
-    const missing = Array.isArray(result.error.missing) ? result.error.missing : [];
-
-    if (code === 'missing_fields') {
-      if (missing.includes('cpf')) {
-        return 'Pra gerar a cobrança, me envia o CPF ou CNPJ do responsável (só números), por favor.';
-      }
-      if (missing.includes('email')) {
-        return 'Para boleto, me manda um e-mail válido (ex: nome@gmail.com), por favor.';
-      }
-      return 'Me falta uma informação pra gerar o pagamento. Pode me confirmar CPF/CNPJ do responsável?';
-    }
-
-    if (code === 'invalid_cpf') {
-      return 'Esse CPF/CNPJ parece inválido 😅 Pode reenviar só números (11 dígitos CPF ou 14 CNPJ)?';
-    }
-
-    if (code === 'invalid_email') {
-      return 'Esse e-mail parece inválido 😅 Pode reenviar no formato nome@dominio.com?';
-    }
-
-    if (code === 'reserva_not_found') {
-      return 'Não consegui localizar sua reserva aqui. Pode me dizer de novo o passeio + data + número de pessoas?';
-    }
-
-    if (code === 'requires_price_confirmation') {
-      return 'Esse passeio tem variação de preço. Antes de gerar a cobrança, preciso confirmar o valor exato com você.';
-    }
-
-    return 'Tive uma instabilidade pra gerar o pagamento agora 😔 Pode tentar de novo em 1 minutinho? Se preferir, chama no (22) 99824-9911.';
-  }
-
-  const data: any = result.data || {};
-  const status = String(data.status || '').toUpperCase();
-  if (status === 'CONFIRMADO') {
-    return 'Pagamento já consta como confirmado ✅ Se quiser, eu envio o voucher por aqui.';
-  }
-
-  const valor = Number(data.valor);
-  const vencimento = data.vencimento ? String(data.vencimento) : undefined;
-
-  if (tipo === 'PIX') {
-    const link = data.pix?.link ? String(data.pix.link) : '';
-    const exp = data.pix?.expiracao ? String(data.pix.expiracao) : vencimento;
-    if (link) {
-      return `PIX gerado ✅\nValor: R$ ${formatCurrencyBR(valor)}\nLink: ${link}${exp ? `\nVence em: ${exp}` : ''}\nAssim que confirmar, eu te mando o voucher por aqui.`;
-    }
-    return `PIX gerado ✅\nValor: R$ ${formatCurrencyBR(valor)}${exp ? `\nVence em: ${exp}` : ''}\nSe não apareceu o link aí, me fala que eu envio novamente.`;
-  }
-
-  const boletoUrl = data.boleto?.url ? String(data.boleto.url) : '';
-  const invoiceLink = data.boleto?.link ? String(data.boleto.link) : '';
-  const v = data.boleto?.vencimento ? String(data.boleto.vencimento) : vencimento;
-  const target = boletoUrl || invoiceLink;
-  if (target) {
-    return `Boleto gerado ✅\nValor: R$ ${formatCurrencyBR(valor)}\nLink: ${target}${v ? `\nVencimento: ${v}` : ''}\nDepois de pagar, o voucher chega automático aqui.`;
-  }
-  return `Boleto gerado ✅\nValor: R$ ${formatCurrencyBR(valor)}${v ? `\nVencimento: ${v}` : ''}\nSe não apareceu o link aí, me fala que eu envio novamente.`;
-}
-
-function shouldForceToolForUserMessage(userMessage: string) {
-  const t = normalizeString(userMessage);
-  if (!t) return false;
-
-  const refusals = [
-    'nao vou passar cpf',
-    'nao passo cpf',
-    'sem cpf',
-    'nao tenho cpf',
-    'nao vou informar cpf',
-    'i dont have cpf',
-    'i won t give cpf',
-    'no cpf',
-    'without cpf',
-    'nao vou passar cnpj',
-    'nao passo cnpj',
-    'sem cnpj',
-    'nao tenho cnpj'
-  ];
-  if (refusals.some(r => t.includes(r))) return false;
-
-  const keywords = [
-    'preco',
-    'valor',
-    'quanto',
-    'custa',
-    'tabela',
-    'passeio',
-    'barco',
-    'buggy',
-    'quadriciclo',
-    'mergulho',
-    'snorkel',
-    'paramotor',
-    'jetski',
-    'jet ski',
-    'escuna',
-    'lancha',
-    'transfer',
-    'city',
-    'combo',
-    'open bar',
-    'price',
-    'cost',
-    'how much',
-    'book',
-    'booking',
-    'reserve',
-    'reservation',
-    'availability',
-    'available',
-    'pay',
-    'payment',
-    'invoice',
-    'bill',
-    'precio',
-    'cuanto',
-    'reservar',
-    'pagar',
-    'pago',
-    'factura',
-    'cancelar',
-    'cancelamento',
-    'cancel',
-    'cancellation',
-    'refund',
-    'reembolso',
-    'estorno',
-    'taxa',
-    'fee',
-    'tax',
-    'embarque',
-    'checkin',
-    'check in',
-    'check-in',
-    'horario',
-    'hora',
-    'schedule',
-    'time',
-    'onde',
-    'where',
-    'address',
-    'endereco',
-    'location',
-    'localizacao',
-    'crianca',
-    'criança',
-    'child',
-    'kids',
-    'idade',
-    'age',
-    'politica',
-    'policy',
-    'pix',
-    'boleto',
-    'copia e cola',
-    'copiacola',
-    'qr',
-    'qrcode'
-  ];
-
-  return keywords.some(k => t.includes(k));
+  if (n < 1 || n > max) return undefined;
+  return n;
 }
 
 function looksLikeStall(text: string) {
-  const t = normalizeString(text);
+  const t = normalizeWhatsApp(text);
   if (!t) return false;
 
   const markers = [
-    'deixa eu ver',
-    'deixa eu confirmar',
+    'vou verificar',
     'vou confirmar',
-    'ja vou confirmar',
-    'vou gerar',
-    'ja vou gerar',
-    'ja estou gerando',
-    'estou gerando',
+    'vou ver',
     'aguarde',
     'um instante',
     'um momento',
     'so um momento',
     'so um minuto',
     'um minuto',
-    'segundinho',
-    'rapidinho',
     'ja estou verificando',
     'ja vou ver'
   ];
@@ -393,85 +371,251 @@ function getBrazilTodayISO() {
   return `${y}-${m}-${d}`;
 }
 
-function buildSystemPrompt() {
-  return `# IDENTITY
-Você é o CALEB, assistente virtual da Caleb's Tour em Cabo Frio/RJ. Você é um guia local: simpático, praiano, direto e convidativo.
-
-# OBJETIVO
-Ajudar o cliente a escolher passeios, tirar dúvidas, fechar reserva e gerar pagamento (PIX ou boleto).
-
-# REGRAS INVIOLÁVEIS
-1) DADOS REAIS: não invente preços, roteiros, horários, regras ou disponibilidade.
-2) SEM FERRAMENTA = SEM DADO: se a mensagem exigir dados factuais (preço/roteiro/horário/taxa/localização/políticas/reserva/pagamento), você DEVE chamar uma ferramenta.
-3) RESULTADOS SÓ VÊM DO SISTEMA: você só tem acesso a resultados quando receber uma mensagem system no formato:
-   <tool_result name="NOME">{"success":...}</tool_result>
-4) PROIBIDO INVENTAR TOOL RESULT: nunca escreva "Resultado da ferramenta", nunca invente JSON e nunca simule que chamou ferramenta.
-5) NUNCA diga "consultando banco/sistema". Fale como humano (ex: "Deixa eu ver pra você").
-6) Não recomece do zero nem se reapresente a cada mensagem. Use o histórico para entender respostas curtas tipo "1", "amanhã", "PIX".
-7) Se faltar alguma informação para reservar/pagar, faça 1 pergunta objetiva por vez.
-8) Não mostre IDs, JSON ou tags internas para o cliente.
-9) VOUCHER: só envie voucher quando o pagamento estiver CONFIRMADO. Antes disso, diga que a reserva fica pendente até o pagamento.
-10) IDIOMA: responda no idioma do cliente. Se ele falar em English/Spanish, responda nesse idioma.
-11) SEGURANÇA/LEI: seja respeitoso. Se pedirem algo ilegal, perigoso, discriminatório ou conteúdo adulto, recuse e ofereça ajuda segura.
-
-# FERRAMENTAS
-Quando precisar agir, responda com APENAS o bloco da ferramenta (nada antes/depois).
-Sintaxe EXATA (maiúsculas):
-[TOOL:nome]{json}[/TOOL]
-Chame apenas 1 ferramenta por vez.
-
-Ferramentas disponíveis:
-- consultar_passeios: lista passeios do Supabase (pode filtrar por termo).
-  exemplo: [TOOL:consultar_passeios]{}[/TOOL] ou [TOOL:consultar_passeios]{"termo":"barco"}[/TOOL]
-- buscar_passeio_especifico: busca passeio por termo (nome/categoria/local).
-  exemplo: [TOOL:buscar_passeio_especifico]{"termo":"quadriciclo"}[/TOOL]
-- consultar_conhecimento: busca informações oficiais (FAQ/políticas/check-in/taxas/logística) na base interna.
-  exemplo: [TOOL:consultar_conhecimento]{"termo":"cancelamento"}[/TOOL]
-- criar_reserva: cria reserva (precisa nome, passeio_id ou passeio, data, num_pessoas).
-  exemplo: [TOOL:criar_reserva]{"nome":"Lucas Vargas","passeio":"barco com toboagua","data":"amanhã","num_pessoas":2}[/TOOL]
-- gerar_pagamento: gera cobrança (PIX/BOLETO) a partir de reserva_id.
-  exemplo: [TOOL:gerar_pagamento]{"reserva_id":"uuid","tipo_pagamento":"PIX"}[/TOOL]
-- gerar_voucher: retorna dados do voucher para reserva confirmada.
-  exemplo: [TOOL:gerar_voucher]{"reserva_id":"uuid"}[/TOOL]
-- cancelar_reserva: cancela uma reserva por reserva_id ou voucher.
-  exemplo: [TOOL:cancelar_reserva]{"voucher":"CBXXXXXXX"}[/TOOL]
-
-# COMO RESPONDER
-- Se a ferramenta retornar success=false, peça APENAS o dado faltante (uma frase).
-- Mensagens curtas estilo WhatsApp.
-- NÃO use tabelas (nada de markdown com |). Use listas numeradas (1,2,3) e frases curtas.
-- Para gerar pagamento, normalmente você vai precisar pedir CPF/CNPJ (e e-mail no boleto).
-- Emojis moderados (🌊🚤☀️😊✨).`;
+function formatISOToBR(iso?: string) {
+  const raw = String(iso || '').trim();
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return raw;
+  return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
-function buildMessages(context: ConversationContext) {
-  const today = getBrazilTodayISO();
+function buildSystemPrompt(todayISO: string) {
+  const todayBR = formatISOToBR(todayISO);
 
-  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-    { role: 'system', content: buildSystemPrompt() },
-    { role: 'system', content: `Data atual (America/Sao_Paulo): ${today}` }
-  ];
+  return `# PAPEL E COMPORTAMENTO\nVocê é um assistente de vendas de passeios turísticos da Caleb's Tour.\n- Seu tom deve ser: profissional, acolhedor, educado e prestativo.\n- RESTRIÇÃO CRÍTICA: NUNCA use emojis.\n- Use linguagem culta e gentil.\n- O objetivo é converter vendas, mas agindo como um consultor humano, não um robô.\n\n# INFORMAÇÕES GERAIS\n- Data de hoje (America/Sao_Paulo): ${todayBR}.\n- Local: Arraial do Cabo / Região dos Lagos.\n\n# CATÁLOGO DE SERVIÇOS\n1. Combo Barco + Quadriciclo (2 pessoas): R$ 300,00\n2. Passeio de Barco (Open Bar + Open Food): R$ 169,90\n3. Passeio de Barco com Toboágua: R$ 59,90\n4. Passeio de Barco Exclusivo: R$ 2400,00\n5. City Tour Arraial (Saída RJ): R$ 280,00\n\n# INSTRUÇÕES DE LÓGICA (LEIA O HISTÓRICO)\nAntes de responder, analise as mensagens anteriores do usuário e o estado extraído para verificar quais dados já foram fornecidos:\n- [ ] Nome do cliente\n- [ ] Data do passeio (interprete datas relativas com base na data de hoje)\n- [ ] Quantidade de pessoas\n- [ ] Pacote escolhido\n\n# REGRAS DE INTERAÇÃO\n1. Não seja repetitivo: se um dado já foi informado, não pergunte novamente.\n2. Coleta de dados: pergunte apenas o que estiver faltando e apenas uma coisa por vez.\n3. Pagamento: CPF/CNPJ é o último passo. Só peça CPF/CNPJ depois de confirmar pacote, data e quantidade e após o cliente autorizar a emissão do pagamento.\n4. Explique que o CPF/CNPJ é necessário para gerar um link de pagamento seguro.\n\n# FERRAMENTAS (OBRIGATÓRIO PARA AÇÕES E DADOS)\n- Se a mensagem exigir dados factuais (preço, horário, local, políticas) ou qualquer ação (criar reserva, gerar pagamento, gerar voucher, cancelar), você DEVE chamar uma ferramenta.\n- Você só pode usar dados vindos de <tool_result>.\n- Nunca mostre JSON, IDs internos, nem tags <tool_result> ao cliente.\n\nSintaxe exata para chamar ferramenta (sem texto antes/depois):\n[TOOL:nome]{json}[/TOOL]\n\nFerramentas disponíveis:\n- consultar_passeios\n- buscar_passeio_especifico\n- consultar_conhecimento\n- criar_reserva\n- gerar_pagamento\n- gerar_voucher\n- cancelar_reserva\n\n# ESTILO DE RESPOSTA\n- Venda consultiva: seja persuasivo sem exageros; destaque rapidamente o benefício principal do passeio.\n- Ao listar opções de passeios, SEMPRE mostre o valor ao lado (ex.: "R$ 169,90").\n- Mensagens curtas e objetivas, adequadas para WhatsApp.\n- Não use gírias.\n- Não use emojis.\n- Antes de responder, faça um checklist mental: intenção -> dados já coletados -> próximo passo -> resposta.`;
+}
 
-  if (context.nome) {
-    messages.push({ role: 'system', content: `Nome do cliente (se útil): ${context.nome}` });
-  }
+function buildStateSummary(context: ConversationContext) {
+  const dataISO = context.tempData?.data;
+  const pessoas = context.tempData?.numPessoas;
+  const passeio = context.tempData?.passeioNome || context.tempData?.passeio;
+  const hasCpf = !!context.tempData?.cpf;
+  const hasEmail = !!context.tempData?.email;
+  const tipoPagamento = context.tempData?.tipoPagamento;
+  const hasReserva = !!context.tempData?.reservaId;
+  const valor = context.tempData?.valorTotal;
 
-  const memories = context.metadata?.memories;
-  if (Array.isArray(memories) && memories.length) {
-    const last = memories.slice(-5).map(m => `- ${m.value}`).join('\n');
-    messages.push({ role: 'system', content: `Memórias do cliente:\n${last}` });
-  }
+  const lines: string[] = [];
+  lines.push('ESTADO EXTRAÍDO (use para evitar repetição):');
+  lines.push(`- Nome: ${context.nome ? context.nome : 'não informado'}`);
+  lines.push(`- Passeio: ${passeio ? passeio : 'não selecionado'}`);
+  lines.push(`- Data (ISO): ${dataISO ? dataISO : 'não informada'}`);
+  lines.push(`- Pessoas: ${pessoas != null ? pessoas : 'não informado'}`);
+  lines.push(`- Reserva criada: ${hasReserva ? 'sim' : 'não'}`);
+  if (valor != null) lines.push(`- Valor total (se aplicável): ${Number(valor).toFixed(2)}`);
+  lines.push(`- Pagamento (tipo): ${tipoPagamento ? tipoPagamento : 'não definido'}`);
+  lines.push(`- CPF/CNPJ disponível: ${hasCpf ? 'sim' : 'não'}`);
+  lines.push(`- E-mail disponível: ${hasEmail ? 'sim' : 'não'}`);
 
-  const history = Array.isArray(context.conversationHistory) ? context.conversationHistory : [];
-  const recent = history.slice(-20).filter(m => m?.role && typeof m.content === 'string');
-
-  for (const m of recent) {
-    if (m.role === 'system' || m.role === 'user' || m.role === 'assistant') {
-      messages.push({ role: m.role as any, content: m.content });
+  const options = Array.isArray(context.tempData?.optionList) ? context.tempData?.optionList : [];
+  if (options?.length) {
+    const limited = options.slice(0, 10);
+    lines.push('Opções apresentadas mais recentemente (o cliente pode responder com o número):');
+    for (let i = 0; i < limited.length; i++) {
+      lines.push(`${i + 1}) ${limited[i]}`);
     }
   }
 
+  return lines.join('\n');
+}
+
+function buildMessages(context: ConversationContext): ChatMessage[] {
+  const todayISO = getBrazilTodayISO();
+
+  const messages: ChatMessage[] = [{ role: 'system', content: buildSystemPrompt(todayISO) }];
+
+  const history = Array.isArray(context.conversationHistory) ? context.conversationHistory : [];
+  const selected = selectHistoryForPrompt(history);
+
+  if (!selected.length) {
+    messages.push({ role: 'system', content: buildStateSummary(context) });
+    return messages;
+  }
+
+  const last = selected[selected.length - 1];
+  const rest = selected.slice(0, -1);
+  messages.push(...rest);
+  messages.push({ role: 'system', content: buildStateSummary(context) });
+  messages.push(last);
+
   return messages;
+}
+
+function looksLikeQuestionOrSlotRequest(text: string) {
+  if (!text) return false;
+  if (text.includes('?')) return true;
+
+  const t = normalizeWhatsApp(text);
+  const cues = [
+    'qual',
+    'quando',
+    'quantas',
+    'quantos',
+    'para qual',
+    'pra qual',
+    'poderia',
+    'pode me informar',
+    'me informe',
+    'me diga',
+    'por gentileza',
+    'cpf',
+    'cnpj',
+    'e mail',
+    'email'
+  ];
+
+  return cues.some((c) => t.startsWith(c) || t.includes(c));
+}
+
+function shouldForceToolForUserMessage(userMessage: string) {
+  const t = normalizeWhatsApp(userMessage);
+  if (!t) return false;
+
+  const keywords = [
+    'preco',
+    'valor',
+    'quanto',
+    'custa',
+    'tabela',
+    'passeio',
+    'barco',
+    'buggy',
+    'quadriciclo',
+    'mergulho',
+    'snorkel',
+    'paramotor',
+    'jetski',
+    'jet ski',
+    'escuna',
+    'lancha',
+    'transfer',
+    'city',
+    'combo',
+    'open bar',
+    'reservar',
+    'reserva',
+    'agendar',
+    'pagamento',
+    'pagar',
+    'pix',
+    'boleto',
+    'voucher',
+    'cancelar',
+    'cancelamento',
+    'taxa',
+    'embarque',
+    'checkin',
+    'check in',
+    'check-in',
+    'horario',
+    'hora',
+    'onde',
+    'endereco',
+    'localizacao',
+    'politica',
+    'reembolso',
+    'estorno'
+  ];
+
+  return keywords.some((k) => t.includes(k));
+}
+
+function enrichToolParams(name: ToolName, rawParams: any, context: ConversationContext) {
+  const params = rawParams && typeof rawParams === 'object' && !Array.isArray(rawParams) ? { ...rawParams } : {};
+
+  if (name === 'criar_reserva') {
+    if (params.nome == null && context.nome) params.nome = context.nome;
+    if (params.data == null && context.tempData?.data) params.data = context.tempData.data;
+    if (params.num_pessoas == null && params.numPessoas == null && context.tempData?.numPessoas != null) {
+      params.num_pessoas = context.tempData.numPessoas;
+    }
+    if (params.passeio_id == null && params.passeioId == null && context.tempData?.passeioId) {
+      params.passeio_id = context.tempData.passeioId;
+    }
+    if ((params.passeio == null || params.passeio === '') && context.tempData?.passeioNome) {
+      params.passeio = context.tempData.passeioNome;
+    }
+  }
+
+  if (name === 'gerar_pagamento') {
+    if (params.reserva_id == null && params.reservaId == null && context.tempData?.reservaId) {
+      params.reserva_id = context.tempData.reservaId;
+    }
+    if (params.tipo_pagamento == null && params.tipoPagamento == null && context.tempData?.tipoPagamento) {
+      params.tipo_pagamento = context.tempData.tipoPagamento;
+    }
+    if (params.cpf == null && context.tempData?.cpf) {
+      params.cpf = context.tempData.cpf;
+    }
+    if (params.email == null && context.tempData?.email) {
+      params.email = context.tempData.email;
+    }
+  }
+
+  if (name === 'gerar_voucher') {
+    if (params.reserva_id == null && params.reservaId == null && context.tempData?.reservaId) {
+      params.reserva_id = context.tempData.reservaId;
+    }
+  }
+
+  return params;
+}
+
+function updateSlotsFromUserMessage(context: ConversationContext, userMessage: string) {
+  context.tempData ||= {};
+
+  const cpf = extractCpfCnpjDigits(userMessage);
+  if (cpf) context.tempData.cpf = cpf;
+
+  const email = extractEmail(userMessage);
+  if (email) context.tempData.email = email;
+
+  const expanded = applyWhatsAppExpansions(userMessage);
+
+  const paymentChoice = detectPaymentType(expanded);
+  if (paymentChoice) context.tempData.tipoPagamento = paymentChoice;
+
+  const dateISO = normalizeDateToISO(expanded);
+  if (dateISO) context.tempData.data = dateISO;
+
+  const pessoas = extractNumPessoas(expanded);
+  if (pessoas != null) context.tempData.numPessoas = pessoas;
+
+  const name = extractNameCandidate(userMessage);
+  if (name && !context.nome) context.nome = name;
+}
+
+function handleOptionSelection(context: ConversationContext, userMessage: string) {
+  const ids = Array.isArray(context.tempData?.optionIds) ? context.tempData?.optionIds : [];
+  const options = Array.isArray(context.tempData?.optionList) ? context.tempData?.optionList : [];
+  const rawOptions = Array.isArray((context.tempData as any)?.optionRawList) ? (context.tempData as any).optionRawList : [];
+  if (!ids.length) return;
+
+  let idx = extractOptionIndexStrict(userMessage, ids.length);
+
+  const matchAgainst = rawOptions.length === ids.length ? rawOptions : options;
+
+  if (idx == null && matchAgainst.length === ids.length && matchAgainst.length > 0) {
+    const match = bestFuzzyOptionIndex(userMessage, matchAgainst);
+    if (match && match.score >= 0.62 && match.score - (match.secondScore ?? 0) >= 0.08) {
+      idx = match.index + 1;
+    }
+  }
+
+  if (idx == null) return;
+
+  context.tempData ||= {};
+  context.tempData.passeioId = ids[idx - 1];
+  context.tempData.passeioNome = (rawOptions.length === ids.length ? rawOptions[idx - 1] : undefined) || options[idx - 1];
+
+  delete context.tempData.optionIds;
+  delete (context.tempData as any).optionRawList;
+  delete context.tempData.optionList;
+
+  context.conversationHistory.push({
+    role: 'system',
+    content:
+      'INSTRUÇÃO: O cliente escolheu um passeio. Use o passeio selecionado e o estado extraído para coletar apenas o que estiver faltando e então criar a reserva.'
+  });
 }
 
 export async function runAgentLoop(params: {
@@ -486,146 +630,8 @@ export async function runAgentLoop(params: {
 
   context.conversationHistory.push({ role: 'user', content: userMessage });
 
-  const cpf = extractCpfCnpjDigits(userMessage);
-  if (cpf) context.tempData.cpf = cpf;
-
-  const email = extractEmail(userMessage);
-  if (email) context.tempData.email = email;
-
-  const paymentChoice = detectPaymentType(userMessage);
-  if (paymentChoice) {
-    context.tempData.tipoPagamento = paymentChoice;
-    context.tempData.aguardandoConfirmacaoPagamento = true;
-  }
-
-  if (!context.tempData.aguardandoMenuPosReserva && Array.isArray(context.tempData.optionIds) && context.tempData.optionIds.length) {
-    const idx = extractOptionIndex(userMessage, context.tempData.optionIds.length);
-    if (idx != null) {
-      context.tempData.passeioId = context.tempData.optionIds[idx - 1];
-      context.tempData.passeioNome = context.tempData.optionList?.[idx - 1];
-      return 'Fechou! Me passa:\n1) Seu nome completo\n2) Data do passeio (ex: amanhã ou 20/12)\n3) Quantas pessoas vão';
-    }
-  }
-
-  if (context.tempData.aguardandoMenuPosReserva) {
-    const choice = extractSingleDigitChoice(userMessage);
-    const t = normalizeString(userMessage);
-
-    const wantsSearch =
-      choice === 1 ||
-      t.includes('continuar') ||
-      t.includes('pesquisar') ||
-      t.includes('outros passeios') ||
-      t.includes('outro passeio') ||
-      t.includes('ver mais');
-
-    const wantsPay =
-      choice === 2 ||
-      !!paymentChoice ||
-      !!cpf ||
-      t.includes('pagar') ||
-      t.includes('pagamento') ||
-      t.includes('cobranca');
-
-    if (wantsSearch) {
-      delete context.tempData.aguardandoMenuPosReserva;
-      delete context.tempData.tipoPagamento;
-      delete context.tempData.aguardandoConfirmacaoPagamento;
-      return 'Beleza! O que você quer pesquisar agora? (barco, buggy, quadriciclo, mergulho, transfer...)';
-    }
-
-    if (wantsPay) {
-      delete context.tempData.aguardandoMenuPosReserva;
-
-      if (!context.tempData.tipoPagamento) {
-        return 'Perfeito. Você prefere PIX ou boleto?';
-      }
-    } else {
-      return buildMenuPosReservaPrompt();
-    }
-  }
-
-  const tipoPagamento = context.tempData.tipoPagamento;
-  if (tipoPagamento && context.tempData.reservaId) {
-    const cpfDigits = context.tempData.cpf;
-    const emailSaved = context.tempData.email;
-
-    if ((!cpfDigits || (tipoPagamento === 'BOLETO' && !emailSaved)) && (looksLikePaymentPing(userMessage) || !!paymentChoice)) {
-      const toolResult = await executeTool(
-        'gerar_pagamento',
-        {
-          reserva_id: context.tempData.reservaId,
-          tipo_pagamento: tipoPagamento
-        },
-        { telefone, conversation: context }
-      );
-
-      if (toolResult.success) {
-        context.conversationHistory.push({
-          role: 'system',
-          content: `<tool_result name="gerar_pagamento">${JSON.stringify(toolResult)}</tool_result>`
-        });
-        return formatGerarPagamentoReply(toolResult, tipoPagamento);
-      }
-    }
-
-    if (!cpfDigits) {
-      return 'Me envia o CPF ou CNPJ do responsável (só números), por favor.';
-    }
-
-    if (tipoPagamento === 'BOLETO' && !emailSaved) {
-      return 'Para boleto, me manda um e-mail válido (ex: nome@gmail.com), por favor.';
-    }
-
-    const awaiting = context.tempData.aguardandoConfirmacaoPagamento === true;
-
-    if (awaiting) {
-      if (looksLikeNo(userMessage)) {
-        delete context.tempData.aguardandoConfirmacaoPagamento;
-        delete context.tempData.tipoPagamento;
-        return 'Sem problema! Você prefere PIX ou boleto?';
-      }
-
-      if (looksLikeYes(userMessage) || looksLikePaymentPing(userMessage)) {
-        delete context.tempData.aguardandoConfirmacaoPagamento;
-
-        const wantsCopiaCola =
-          normalizeString(userMessage).includes('copia') || normalizeString(userMessage).includes('copiacola');
-
-        const toolResult = await executeTool(
-          'gerar_pagamento',
-          {
-            reserva_id: context.tempData.reservaId,
-            tipo_pagamento: tipoPagamento,
-            cpf: cpfDigits,
-            email: emailSaved,
-            incluir_copia_cola: wantsCopiaCola
-          },
-          { telefone, conversation: context }
-        );
-
-        context.conversationHistory.push({
-          role: 'system',
-          content: `<tool_result name="gerar_pagamento">${JSON.stringify(toolResult)}</tool_result>`
-        });
-
-        return formatGerarPagamentoReply(toolResult, tipoPagamento);
-      }
-
-      return buildPagamentoConfirmacaoMessage(context, tipoPagamento);
-    }
-
-    const wantsGenerate =
-      !!paymentChoice ||
-      looksLikePaymentPing(userMessage) ||
-      normalizeString(userMessage).includes('gera') ||
-      normalizeString(userMessage).includes('gerar');
-
-    if (wantsGenerate) {
-      context.tempData.aguardandoConfirmacaoPagamento = true;
-      return buildPagamentoConfirmacaoMessage(context, tipoPagamento);
-    }
-  }
+  updateSlotsFromUserMessage(context, userMessage);
+  handleOptionSelection(context, userMessage);
 
   const allowedTools = new Set<ToolName>([
     'consultar_passeios',
@@ -638,97 +644,90 @@ export async function runAgentLoop(params: {
   ]);
 
   const maxSteps = 16;
-  let hasToolResult = false;
+  let hasToolResultThisRun = false;
 
   for (let step = 0; step < maxSteps; step++) {
     const messages = buildMessages(context);
-    const assistant = await groqChat({ messages, temperature: 0.15 });
+    const assistant = await groqChat({ messages, temperature: 0.22, max_tokens: 700 });
 
     const calls = parseToolCalls(assistant);
 
     if (!calls.length) {
-      const cleaned = stripToolBlocks(assistant);
+      const cleanedRaw = stripToolBlocks(assistant);
+      const cleaned = stripEmojis(cleanedRaw);
 
       if (!cleaned) {
         context.conversationHistory.push({
           role: 'system',
-          content: hasToolResult
-            ? 'INSTRUÇÃO: Sua resposta veio vazia. Responda com texto natural para o cliente usando o último <tool_result>.'
-            : 'INSTRUÇÃO: Sua resposta veio vazia. Se precisar de dados, chame uma ferramenta; caso contrário, responda em texto.'
+          content:
+            hasToolResultThisRun
+              ? 'INSTRUÇÃO: Sua resposta veio vazia. Responda com texto final ao cliente usando o último <tool_result> como fonte.'
+              : 'INSTRUÇÃO: Sua resposta veio vazia. Se precisar de dados ou ação, chame uma ferramenta; caso contrário, responda em texto.'
         });
         continue;
       }
 
-      if (!hasToolResult) {
-        const force = shouldForceToolForUserMessage(userMessage);
-        const stall = looksLikeStall(cleaned);
-        const hallucinated = looksLikeHallucinatedToolResult(cleaned);
+      const stall = looksLikeStall(cleaned);
+      const hallucinated = looksLikeHallucinatedToolResult(cleaned);
+      const isQuestion = looksLikeQuestionOrSlotRequest(cleaned);
+
+      if (!hasToolResultThisRun) {
+        const hasAnyToolResultInHistory = (context.conversationHistory || []).some((m) =>
+          m?.role === 'system' && typeof m.content === 'string' && /<tool_result\b/i.test(m.content)
+        );
+
+        const force = !hasAnyToolResultInHistory && shouldForceToolForUserMessage(userMessage) && !isQuestion;
 
         if (force || stall || hallucinated) {
           context.conversationHistory.push({
             role: 'system',
             content:
-              'INSTRUÇÃO: Sua resposta anterior foi inválida porque você não chamou uma ferramenta quando precisava. Agora responda APENAS com um bloco [TOOL:...]...[/TOOL] adequado. Não escreva texto.'
+              'INSTRUÇÃO: Sua resposta anterior foi inválida. Se precisar de dados ou ação, responda APENAS com um bloco [TOOL:...]...[/TOOL] apropriado. Não escreva texto.'
           });
           continue;
         }
       }
 
-      if (hasToolResult && looksLikeStall(cleaned)) {
+      if (hasToolResultThisRun && (stall || hallucinated)) {
         context.conversationHistory.push({
           role: 'system',
           content:
-            'INSTRUÇÃO: Sua resposta anterior pareceu enrolação. Responda agora com texto final para o cliente usando o último <tool_result> (se success=false, peça exatamente o que falta; se success=true, entregue a informação/link).'
+            'INSTRUÇÃO: Responda agora com texto final e direto ao cliente usando o último <tool_result>. Não enrole e não mostre JSON/tags internas.'
         });
         continue;
       }
 
-      if (hasToolResult && looksLikeHallucinatedToolResult(cleaned)) {
-        context.conversationHistory.push({
-          role: 'system',
-          content:
-            'INSTRUÇÃO: Não mostre JSON/tags internas ao cliente. Responda apenas com texto natural, usando o último <tool_result> como fonte.'
-        });
-        continue;
-      }
-
-      return cleaned || 'Tive um erro rapidinho aqui 😅 Pode repetir em uma frase?';
+      return cleaned;
     }
 
     const first = calls[0];
-    const name = first.name as ToolName;
+    const name = (first.name || '').toLowerCase() as ToolName;
 
     if (!allowedTools.has(name)) {
       context.conversationHistory.push({ role: 'assistant', content: assistant });
       context.conversationHistory.push({
         role: 'system',
-        content: `<tool_result name="${first.name}">${JSON.stringify({ success: false, error: { code: 'unknown_tool', message: 'Ferramenta não permitida.' } })}</tool_result>`
+        content: `<tool_result name="${name}">${JSON.stringify({
+          success: false,
+          error: { code: 'unknown_tool', message: 'Ferramenta não permitida.' }
+        })}</tool_result>`
       });
-      hasToolResult = true;
+      hasToolResultThisRun = true;
       continue;
     }
 
     context.conversationHistory.push({ role: 'assistant', content: assistant });
 
-    const toolResult = await executeTool(name, first.params || {}, { telefone, conversation: context });
+    const toolParams = enrichToolParams(name, first.params || {}, context);
+    const toolResult = await executeTool(name, toolParams, { telefone, conversation: context });
+
     context.conversationHistory.push({
       role: 'system',
       content: `<tool_result name="${name}">${JSON.stringify(toolResult)}</tool_result>`
     });
-    hasToolResult = true;
 
-    if ((name === 'consultar_passeios' || name === 'buscar_passeio_especifico') && toolResult.success) {
-      return formatPasseiosOffer(toolResult.data);
-    }
-
-    if (name === 'criar_reserva' && toolResult.success) {
-      context.tempData ||= {};
-      context.tempData.aguardandoMenuPosReserva = true;
-      delete context.tempData.tipoPagamento;
-      delete context.tempData.aguardandoConfirmacaoPagamento;
-      return formatReservaCriadaMenu(context, toolResult.data);
-    }
+    hasToolResultThisRun = true;
   }
 
-  return 'Ops! Meu sistema ficou preso aqui 😅 Pode me dizer de novo o que você quer (passeio + data + pessoas)?';
+  return 'Desculpe, tive uma instabilidade. Pode enviar novamente sua solicitação em uma frase?';
 }
