@@ -231,7 +231,7 @@ export async function getAllPasseios(): Promise<Passeio[]> {
 
     cachedAllPasseios = (data as any) || [];
     cachedAllPasseiosAt = now;
-    return cachedAllPasseios;
+    return cachedAllPasseios || [];
   } catch (error) {
     console.error('Erro ao buscar passeios:', error);
     return [];
