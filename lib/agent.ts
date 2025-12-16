@@ -1,4 +1,4 @@
-import { getConversationContext, saveConversationContext } from './supabase';
+import { ConversationContext, getConversationContext, saveConversationContext } from './supabase';
 import { runAgentLoop } from './agent-runner';
 
 function stripToolBlocks(text: string) {
@@ -53,7 +53,20 @@ export async function processMessage(telefone: string, message: string): Promise
   const startTime = Date.now();
 
   try {
-    const context = await getConversationContext(telefone);
+    let context: ConversationContext;
+
+    try {
+      context = await getConversationContext(telefone);
+    } catch (error) {
+      console.error('Erro ao carregar contexto (fallback stateless):', error);
+      context = {
+        telefone,
+        conversationHistory: [],
+        tempData: {},
+        metadata: { memories: [] }
+      };
+    }
+
     const userMessage = (message || '').trim();
 
     if (!userMessage) {
@@ -72,7 +85,12 @@ export async function processMessage(telefone: string, message: string): Promise
     context.conversationHistory.push({ role: 'assistant', content: response });
     context.conversationHistory = compactConversationHistory(context.conversationHistory);
 
-    await saveConversationContext(context);
+    try {
+      await saveConversationContext(context);
+    } catch (error) {
+      console.error('Erro ao salvar contexto (ignorando):', error);
+    }
+
     console.log(`Respondido em ${Date.now() - startTime}ms`);
     return response;
   } catch (error) {

@@ -76,14 +76,25 @@ export async function groqChat(params: {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const completion = await (groq.chat.completions.create as any)({
+      const payload = {
         model,
         messages: params.messages,
         temperature: params.temperature ?? 0.4,
         max_tokens: params.max_tokens ?? 450,
-        top_p: params.top_p ?? 0.9,
-        signal: controller.signal
-      });
+        top_p: params.top_p ?? 0.9
+      };
+
+      let completion: any;
+      try {
+        completion = await (groq.chat.completions.create as any)(payload, { signal: controller.signal });
+      } catch (err: any) {
+        const msg = String(err?.message || '').toLowerCase();
+        if (msg.includes('signal') || msg.includes('unexpected') || msg.includes('unknown')) {
+          completion = await (groq.chat.completions.create as any)(payload);
+        } else {
+          throw err;
+        }
+      }
 
       const content = completion?.choices?.[0]?.message?.content;
       return (content || '').trim();
