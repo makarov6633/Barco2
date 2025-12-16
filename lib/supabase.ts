@@ -211,8 +211,17 @@ export async function getOrCreateCliente(telefone: string, nome?: string): Promi
   }
 }
 
+let cachedAllPasseios: Passeio[] | null = null;
+let cachedAllPasseiosAt = 0;
+const PASSEIOS_CACHE_TTL = 10 * 60 * 1000;
+
 export async function getAllPasseios(): Promise<Passeio[]> {
   try {
+    const now = Date.now();
+    if (cachedAllPasseios && (now - cachedAllPasseiosAt) < PASSEIOS_CACHE_TTL) {
+      return cachedAllPasseios;
+    }
+
     const supabase = getSupabase();
 
     const { data } = await supabase
@@ -220,7 +229,9 @@ export async function getAllPasseios(): Promise<Passeio[]> {
       .select('*')
       .order('nome');
 
-    return (data as any) || [];
+    cachedAllPasseios = (data as any) || [];
+    cachedAllPasseiosAt = now;
+    return cachedAllPasseios || [];
   } catch (error) {
     console.error('Erro ao buscar passeios:', error);
     return [];
@@ -273,100 +284,82 @@ export async function getConversationContext(telefone: string): Promise<Conversa
 }
 
 export async function saveConversationContext(context: ConversationContext): Promise<void> {
-  try {
-    const supabase = getSupabase();
-
-    const metadata = normalizeMetadata(context.metadata);
-
-    const safeContext: ConversationContext = {
-      ...context,
-      conversationHistory: normalizeConversationHistory(context.conversationHistory),
-      tempData: normalizeTempData(context.tempData),
-      lastMessageTime: context.lastMessageTime || new Date().toISOString(),
-      metadata
-    };
-
-    const mode = await getConversationContextStorageMode(supabase);
-
-    const { data: existing } = await supabase
-      .from('conversation_contexts')
-      .select('id')
-      .eq('telefone', safeContext.telefone)
-      .limit(1)
-      .maybeSingle();
-
-    if (mode === 'json') {
-      const minimalPayload: any = {
-        telefone: safeContext.telefone,
-        context: safeContext
+  const saveWork = async () => {
+    try {
+      const supabase = getSupabase();
+      const metadata = normalizeMetadata(context.metadata);
+      const safeContext: ConversationContext = {
+        ...context,
+        conversationHistory: normalizeConversationHistory(context.conversationHistory),
+        tempData: normalizeTempData(context.tempData),
+        lastMessageTime: context.lastMessageTime || new Date().toISOString(),
+        metadata
       };
 
-      const extendedPayload: any = {
-        ...minimalPayload,
-        last_message: safeContext.lastMessage,
-        last_intent: safeContext.lastIntent,
-        last_updated: safeContext.lastMessageTime,
-        metadata: safeContext.metadata
-      };
+      const mode = await getConversationContextStorageMode(supabase);
 
-      if (existing?.id) {
+      if (mode === 'json') {
+        const minimalPayload = {
+          telefone: safeContext.telefone,
+          context: safeContext
+        };
+
+        const extendedPayload = {
+          ...minimalPayload,
+          last_message: safeContext.lastMessage,
+          last_intent: safeContext.lastIntent,
+          last_updated: safeContext.lastMessageTime,
+          metadata: safeContext.metadata
+        };
+
         const { error } = await supabase
           .from('conversation_contexts')
-          .update(extendedPayload)
-          .eq('id', (existing as any).id);
+          .upsert(extendedPayload, { onConflict: 'telefone' });
 
         if (error) {
           const msg = `${(error as any)?.message || ''}`.toLowerCase();
           if (msg.includes('column')) {
             await supabase
               .from('conversation_contexts')
-              .update(minimalPayload)
-              .eq('id', (existing as any).id);
+              .upsert(minimalPayload, { onConflict: 'telefone' });
+          } else {
+             console.error('Context save error (json):', error);
           }
         }
       } else {
+        const payload = {
+          telefone: safeContext.telefone,
+          nome: safeContext.nome,
+          conversation_history: safeContext.conversationHistory,
+          current_flow: safeContext.currentFlow,
+          flow_step: safeContext.flowStep,
+          temp_data: safeContext.tempData,
+          last_intent: safeContext.lastIntent,
+          last_message: safeContext.lastMessage,
+          last_message_time: safeContext.lastMessageTime,
+          metadata: safeContext.metadata
+        };
+
         const { error } = await supabase
           .from('conversation_contexts')
-          .insert(extendedPayload);
-
-        if (error) {
-          const msg = `${(error as any)?.message || ''}`.toLowerCase();
-          if (msg.includes('column')) {
-            await supabase
-              .from('conversation_contexts')
-              .insert(minimalPayload);
-          }
-        }
+          .upsert(payload, { onConflict: 'telefone' });
+          
+        if (error) console.error('Context save error (columns):', error);
       }
-
-      return;
+    } catch (error) {
+      console.error('Erro ao salvar contexto (internal):', error);
     }
+  };
 
-    const payload: any = {
-      telefone: safeContext.telefone,
-      nome: safeContext.nome,
-      conversation_history: safeContext.conversationHistory,
-      current_flow: safeContext.currentFlow,
-      flow_step: safeContext.flowStep,
-      temp_data: safeContext.tempData,
-      last_intent: safeContext.lastIntent,
-      last_message: safeContext.lastMessage,
-      last_message_time: safeContext.lastMessageTime,
-      metadata: safeContext.metadata
-    };
+  const timeoutMs = 4000;
+  const timeoutPromise = new Promise<void>((_, reject) => {
+    setTimeout(() => reject(new Error(`Timeout saving context (${timeoutMs}ms)`)), timeoutMs);
+  });
 
-    if (existing?.id) {
-      await supabase
-        .from('conversation_contexts')
-        .update(payload)
-        .eq('id', (existing as any).id);
-    } else {
-      await supabase
-        .from('conversation_contexts')
-        .insert(payload);
-    }
+  try {
+    await Promise.race([saveWork(), timeoutPromise]);
   } catch (error) {
-    console.error('Erro ao salvar contexto:', error);
+    console.warn('Ignoring context save timeout/error to preserve response flow:', error);
   }
 }
 

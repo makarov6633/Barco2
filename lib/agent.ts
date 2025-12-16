@@ -56,7 +56,11 @@ export async function processMessage(telefone: string, message: string): Promise
     let context: ConversationContext;
 
     try {
-      context = await getConversationContext(telefone);
+      const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout loading context')), 5000));
+      context = await Promise.race([
+        getConversationContext(telefone),
+        timeoutPromise
+      ]) as ConversationContext;
     } catch (error) {
       console.error('Erro ao carregar contexto (fallback stateless):', error);
       context = {
