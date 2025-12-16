@@ -802,7 +802,7 @@ export async function runAgentLoop(params: {
 }) {
   const { telefone, userMessage, context } = params;
   const loopStartTime = Date.now();
-  const GLOBAL_TIMEOUT_MS = 40000;
+  const GLOBAL_TIMEOUT_MS = 25000;
 
   context.conversationHistory ||= [];
   context.tempData ||= {};

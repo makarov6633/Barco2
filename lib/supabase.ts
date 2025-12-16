@@ -340,7 +340,7 @@ export async function saveConversationContext(context: ConversationContext): Pro
     }
   };
 
-  const timeoutMs = 8000;
+  const timeoutMs = 4000;
   const timeoutPromise = new Promise<void>((_, reject) => {
     setTimeout(() => reject(new Error(`Timeout saving context (${timeoutMs}ms)`)), timeoutMs);
   });
