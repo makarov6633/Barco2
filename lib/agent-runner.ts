@@ -381,7 +381,32 @@ function formatISOToBR(iso?: string) {
 function buildSystemPrompt(todayISO: string) {
   const todayBR = formatISOToBR(todayISO);
 
-  return `# PAPEL E COMPORTAMENTO\nVocê é um assistente de vendas de passeios turísticos da Caleb's Tour.\n- Seu tom deve ser: profissional, acolhedor, educado e prestativo.\n- RESTRIÇÃO CRÍTICA: NUNCA use emojis.\n- Use linguagem culta e gentil.\n- O objetivo é converter vendas, mas agindo como um consultor humano, não um robô.\n\n# INFORMAÇÕES GERAIS\n- Data de hoje (America/Sao_Paulo): ${todayBR}.\n- Local: Arraial do Cabo / Região dos Lagos.\n\n# FONTE DE VERDADE (CRÍTICO)\n- Catálogo, preços, duração, horários e disponibilidade vêm do Supabase via ferramentas.\n- Nunca afirme que "não tem"/"não existe" um passeio sem consultar_passeios ou buscar_passeio_especifico.\n- Se o cliente disser "vi no site" e o passeio não aparecer no catálogo retornado, explique que ele não está cadastrado/ativo no sistema no momento e peça o NOME EXATO do passeio (ou link/screenshot) para validar.\n\n# INSTRUÇÕES DE LÓGICA (LEIA O HISTÓRICO)\nAntes de responder, analise as mensagens anteriores do usuário e o estado extraído para verificar quais dados já foram fornecidos:\n- [ ] Nome do cliente\n- [ ] Data do passeio (interprete datas relativas com base na data de hoje)\n- [ ] Quantidade de pessoas\n- [ ] Passeio escolhido\n\n# REGRAS DE INTERAÇÃO\n1. Não seja repetitivo: se um dado já foi informado, não pergunte novamente.\n2. Coleta de dados: pergunte apenas o que estiver faltando e apenas uma coisa por vez.\n3. Pagamento: CPF/CNPJ é o último passo. Só peça CPF/CNPJ depois de confirmar passeio, data e quantidade e após o cliente autorizar a emissão do pagamento.\n4. Explique que o CPF/CNPJ é necessário para gerar um link de pagamento seguro.\n\n# FERRAMENTAS (OBRIGATÓRIO PARA AÇÕES E DADOS)\n- Se a mensagem exigir dados factuais (preço, horário, local, políticas) ou qualquer ação (criar reserva, gerar pagamento, gerar voucher, cancelar), você DEVE chamar uma ferramenta.\n- Você só pode usar dados vindos de <tool_result>.\n- Nunca mostre JSON, IDs internos, nem tags <tool_result> ao cliente.\n\nSintaxe exata para chamar ferramenta (sem texto antes/depois):\n[TOOL:nome]{json}[/TOOL]\n\nFerramentas disponíveis:\n- consultar_passeios\n- buscar_passeio_especifico\n- consultar_conhecimento\n- criar_reserva\n- gerar_pagamento\n- gerar_voucher\n- cancelar_reserva\n\n# ESTILO DE RESPOSTA\n- Venda consultiva: seja persuasivo sem exageros; destaque rapidamente o benefício principal do passeio.\n- Ao listar opções numeradas para escolha, limite a 12 e SEMPRE mostre o valor ao lado (ex.: "R$ 169,90").\n- Mensagens curtas e objetivas, adequadas para WhatsApp.\n- Não use gírias.\n- Não use emojis.\n- Antes de responder, faça um checklist mental: intenção -> dados já coletados -> próximo passo -> resposta.`;
+  return `Você é assistente de vendas da Caleb's Tour (passeios em Arraial do Cabo/RJ). Data: ${todayBR}.
+
+REGRAS CRÍTICAS:
+1. TODO catálogo/preço/disponibilidade vem do Supabase via ferramentas - NUNCA invente/negue sem consultar
+2. Se cliente pedir "buggy", "quadriciclo", "barco", ou qualquer produto: chame consultar_passeios ANTES de responder
+3. NUNCA diga "não temos X" sem consultar_passeios ou buscar_passeio_especifico
+4. Mensagens CURTAS (máx 3 linhas), sem emojis, sem repetição
+5. Use dados do <tool_result> para responder - nunca mostre JSON/IDs/tags ao cliente
+
+FERRAMENTAS (sintaxe: [TOOL:nome]{json}[/TOOL]):
+- consultar_passeios: busca catálogo (termo opcional)
+- buscar_passeio_especifico: busca por nome exato
+- consultar_conhecimento: FAQ/políticas
+- criar_reserva: cria reserva (requer nome, passeio_id, data, num_pessoas)
+- gerar_pagamento: gera PIX/boleto (requer reserva_id, cpf)
+- gerar_voucher: gera voucher
+- cancelar_reserva: cancela
+
+COLETA DE DADOS (NÃO REPITA):
+- Nome, passeio, data, qtd pessoas
+- CPF só no final após cliente autorizar pagamento
+
+RESPOSTA:
+- Ao listar opções: numere e mostre preço (ex: "1) Buggy Exclusivo — R$ 1.200,00")
+- Máximo 12 opções
+- Curto e direto`;
 }
 
 function buildStateSummary(context: ConversationContext) {
@@ -669,16 +694,16 @@ function buildPrefetchMenuResponse(userMessage: string, context: ConversationCon
 
   if (plan.kind === 'buggy') {
     if (!lines) {
-      return 'No meu catálogo do sistema não apareceu nenhuma opção de buggy agora. Você consegue me dizer o nome exato do passeio que viu no site (ou mandar um print/link)?';
+      return 'Não encontrei buggy cadastrado no sistema. Tem o nome exato ou link do passeio?';
     }
-    return `Opções de buggy disponíveis:\n${lines}\n\nResponda com o número da opção.`;
+    return `Opções de buggy:\n${lines}\n\nResponda o número.`;
   }
 
   if (!lines) {
-    return 'No momento não encontrei opções disponíveis no catálogo. Pode tentar novamente em 1 minuto?';
+    return 'Nenhuma opção disponível no momento.';
   }
 
-  return `Segue a lista de passeios disponíveis:\n${lines}\n\nResponda com o número da opção.`;
+  return `Passeios disponíveis:\n${lines}\n\nResponda o número.`;
 }
 
 function getRecentOptionStrings(context: ConversationContext) {
@@ -702,7 +727,9 @@ function getPasseiosPrefetchPlan(userMessage: string, context: ConversationConte
 
   const wantsAll =
     (t.includes('todos os passeios') || t.includes('todas as opcoes') || t.includes('todas opcoes')) ||
-    (t.includes('cade') && (t.includes('passeios') || t.includes('passeio')));
+    (t.includes('cade') && (t.includes('passeios') || t.includes('passeio'))) ||
+    t.includes('quais passeios') ||
+    t.includes('quais outros passeios');
 
   const wantsList =
     wantsAll ||
@@ -713,7 +740,8 @@ function getPasseiosPrefetchPlan(userMessage: string, context: ConversationConte
     t.includes('outros passeios') ||
     t.includes('quero outro') ||
     t.includes('quero ver') ||
-    t.includes('mostrar passeios');
+    t.includes('mostrar passeios') ||
+    t.includes('quais passeios');
 
   let termo: string | undefined;
   if (t.includes('buggy')) termo = 'buggy';
@@ -722,16 +750,16 @@ function getPasseiosPrefetchPlan(userMessage: string, context: ConversationConte
   else if (t.includes('open bar') || t.includes('open food')) termo = 'open bar';
   else if (t.includes('transfer')) termo = 'transfer';
   else if (t.includes('city')) termo = 'city';
+  else if (t.includes('barco')) termo = 'barco';
+  else if (t.includes('mergulho')) termo = 'mergulho';
+  else if (t.includes('jetski') || t.includes('jet ski')) termo = 'jetski';
 
   const shouldConsider = wantsList || !!termo;
   if (!shouldConsider) return { should: false };
 
-  const hasOptions = getRecentOptionStrings(context).length > 0;
-
   if (wantsAll) return { should: true, wantsAll: true };
   if (wantsList) return { should: true, termo };
-  if (!hasOptions) return { should: true, termo };
-  if (termo && !optionsLikelyContain(context, termo)) return { should: true, termo };
+  if (termo) return { should: true, termo };
 
   return { should: false };
 }
@@ -780,7 +808,7 @@ export async function runAgentLoop(params: {
 
   for (let step = 0; step < maxSteps; step++) {
     const messages = buildMessages(context);
-    const assistant = await groqChat({ messages, temperature: 0.22, max_tokens: 700 });
+    const assistant = await groqChat({ messages, temperature: 0.18, max_tokens: 380 });
 
     const calls = parseToolCalls(assistant);
 

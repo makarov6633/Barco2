@@ -65,7 +65,7 @@ export async function groqChat(params: {
 }) {
   const groq = getGroqClient();
 
-  const model = params.model || process.env.GROQ_REASONING_MODEL || 'openai/gpt-oss-120b';
+  const model = params.model || process.env.GROQ_REASONING_MODEL || 'deepseek-r1-distill-llama-70b';
   const maxRetries = getEnvInt('GROQ_MAX_RETRIES', 3);
   const timeoutMs = getEnvInt('GROQ_TIMEOUT_MS', 30000);
 
