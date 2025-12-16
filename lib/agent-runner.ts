@@ -620,6 +620,67 @@ function handleOptionSelection(context: ConversationContext, userMessage: string
 
 type PasseiosPrefetchPlan = { should: boolean; termo?: string; wantsAll?: boolean };
 
+type PrefetchMenuResponsePlan =
+  | { kind: 'none' }
+  | { kind: 'buggy' }
+  | { kind: 'list' };
+
+function formatOptionsMenuLines(options: string[]) {
+  const limited = (Array.isArray(options) ? options : []).slice(0, 12);
+  if (!limited.length) return '';
+  return limited.map((o, i) => `${i + 1}) ${o}`).join('\n');
+}
+
+function getPrefetchMenuResponsePlan(userMessage: string, prefetch: PasseiosPrefetchPlan): PrefetchMenuResponsePlan {
+  if (!prefetch?.should) return { kind: 'none' };
+
+  const t = normalizeWhatsApp(userMessage);
+  if (!t) return { kind: 'none' };
+
+  if (t.includes('buggy')) return { kind: 'buggy' };
+
+  const wantsAll =
+    (t.includes('todos os passeios') || t.includes('todas as opcoes') || t.includes('todas opcoes')) ||
+    (t.includes('cade') && (t.includes('passeios') || t.includes('passeio')));
+
+  const wantsList =
+    wantsAll ||
+    t.includes('opcoes') ||
+    t.includes('opcao') ||
+    t.includes('catalogo') ||
+    t.includes('outro passeio') ||
+    t.includes('outros passeios') ||
+    t.includes('quero outro') ||
+    t.includes('quero ver') ||
+    t.includes('mostrar passeios');
+
+  if (wantsList) return { kind: 'list' };
+  if (prefetch.termo) return { kind: 'list' };
+
+  return { kind: 'none' };
+}
+
+function buildPrefetchMenuResponse(userMessage: string, context: ConversationContext, prefetch: PasseiosPrefetchPlan): string | undefined {
+  const plan = getPrefetchMenuResponsePlan(userMessage, prefetch);
+  if (plan.kind === 'none') return undefined;
+
+  const options = Array.isArray(context.tempData?.optionList) ? context.tempData.optionList : [];
+  const lines = formatOptionsMenuLines(options);
+
+  if (plan.kind === 'buggy') {
+    if (!lines) {
+      return 'No meu catálogo do sistema não apareceu nenhuma opção de buggy agora. Você consegue me dizer o nome exato do passeio que viu no site (ou mandar um print/link)?';
+    }
+    return `Opções de buggy disponíveis:\n${lines}\n\nResponda com o número da opção.`;
+  }
+
+  if (!lines) {
+    return 'No momento não encontrei opções disponíveis no catálogo. Pode tentar novamente em 1 minuto?';
+  }
+
+  return `Segue a lista de passeios disponíveis:\n${lines}\n\nResponda com o número da opção.`;
+}
+
 function getRecentOptionStrings(context: ConversationContext) {
   const raw = Array.isArray((context.tempData as any)?.optionRawList) ? ((context.tempData as any).optionRawList as string[]) : [];
   const pretty = Array.isArray(context.tempData?.optionList) ? (context.tempData?.optionList as string[]) : [];
@@ -712,6 +773,9 @@ export async function runAgentLoop(params: {
       content: `<tool_result name="consultar_passeios">${JSON.stringify(toolResult)}</tool_result>`
     });
     hasToolResultThisRun = true;
+
+    const direct = buildPrefetchMenuResponse(userMessage, context, prefetch);
+    if (direct) return direct;
   }
 
   for (let step = 0; step < maxSteps; step++) {
