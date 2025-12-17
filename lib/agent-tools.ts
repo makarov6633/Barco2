@@ -316,7 +316,32 @@ function bestKnowledgeMatches(chunks: KnowledgeChunk[], term: string, limit = 5)
   const q = normalizeString(term);
   if (!q) return [];
 
-  const tokens = Array.from(new Set(q.split(' ').filter(t => t.length >= 3)));
+  const stop = new Set([
+    'a','o','os','as','um','uma','uns','umas',
+    'de','do','da','dos','das','no','na','nos','nas',
+    'e','ou','pra','para','por','com','sem','em','ao','aos','à','às',
+    'que','qual','quais','quando','quanto','quantos','quantas','onde','como','porque','por que',
+    'tem','tenho','tive','ser','estar','fica','pode','posso','precisa','necessario','necessária'
+  ]);
+
+  const rawTokens = q.split(' ').map(t => t.trim()).filter(Boolean);
+  const tokens = Array.from(new Set(rawTokens.filter(t => t.length >= 2 && !stop.has(t))));
+
+  if (!tokens.length) {
+    const fallback = chunks
+      .map((c) => {
+        const hay = normalizeString(`${c.title} ${c.slug} ${(c.tags || []).join(' ')} ${c.content}`);
+        const exactIdx = hay.indexOf(q);
+        const score = exactIdx === -1 ? 0 : 100 + Math.max(0, 30 - exactIdx);
+        return { c, score };
+      })
+      .filter(x => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, Math.max(1, limit))
+      .map(x => x.c);
+
+    return fallback;
+  }
 
   const scored = chunks
     .map((c) => {
@@ -402,7 +427,7 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
         data: matches.map((c) => ({
           slug: c.slug,
           title: c.title,
-          content: c.content ? String(c.content).slice(0, 1400) : '',
+          content: c.content ? String(c.content).slice(0, 2200) : '',
           source: c.source || null,
           tags: Array.isArray(c.tags) ? c.tags : null
         }))
@@ -416,7 +441,8 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
         ? passeios.filter(p => {
             const hay = normalizeString(`${p.nome} ${p.categoria || ''} ${p.local || ''} ${p.descricao || ''}`);
             const q = normalizeQuery(termo);
-            const tokens = q.split(' ').filter(t => t.length >= 3);
+            const ignore = new Set(['passeio', 'passeios', 'tour', 'roteiro', 'opcao', 'opcoes', 'valor', 'valores', 'preco', 'precos', 'quanto', 'custa', 'quero', 'reservar', 'reserva']);
+            const tokens = q.split(' ').filter(t => t.length >= 3 && !ignore.has(t));
             if (!tokens.length) return hay.includes(q);
             return tokens.every(t => hay.includes(t));
           })
@@ -431,7 +457,8 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
         duracao: p.duracao,
         preco_min: p.preco_min != null ? Number(p.preco_min) : null,
         preco_max: p.preco_max != null ? Number(p.preco_max) : null,
-        horarios: p.horarios
+        horarios: p.horarios,
+        includes: (p as any)?.includes ? String((p as any).includes).slice(0, 700) : null
       }));
 
       ctx.conversation.tempData ||= {};
@@ -463,7 +490,8 @@ export async function executeTool(name: ToolName, params: any, ctx: { telefone: 
         duracao: p.duracao,
         preco_min: p.preco_min != null ? Number(p.preco_min) : null,
         preco_max: p.preco_max != null ? Number(p.preco_max) : null,
-        horarios: p.horarios
+        horarios: p.horarios,
+        includes: (p as any)?.includes ? String((p as any).includes).slice(0, 700) : null
       }));
 
       ctx.conversation.tempData ||= {};

@@ -37,6 +37,7 @@ function applyWhatsAppExpansions(value?: string) {
   s = s.replace(/\bprox\b/g, 'proximo');
   s = s.replace(/\bopenbar\b/g, 'open bar');
   s = s.replace(/\bopenfood\b/g, 'open food');
+  s = s.replace(/\bjet\s*ski\b/g, 'jetski');
   s = s.replace(/\b(\d{1,2})\s*(?:p|pax)\b/g, '$1 pessoas');
 
   return s;
@@ -317,6 +318,35 @@ function extractOptionIndexStrict(message: string, max: number) {
   return n;
 }
 
+function extractOptionIndexLoose(message: string) {
+  const t = normalizeWhatsApp(message);
+  if (!t) return undefined;
+
+  const m = t.match(/^(?:opcao|op|numero|num|n)?\s*(\d{1,2})$/i);
+  if (!m?.[1]) return undefined;
+
+  const n = Number.parseInt(m[1], 10);
+  if (!Number.isFinite(n)) return undefined;
+  return n;
+}
+
+function hasWord(t: string, word: string) {
+  if (!t || !word) return false;
+  const re = new RegExp(`\\b${word}\\b`, 'i');
+  return re.test(t);
+}
+
+function isNegatedMention(t: string, term: string) {
+  if (!t || !term) return false;
+  if (!hasWord(t, term)) return false;
+  const re = new RegExp(`\\b(nao|sem|dispenso|nem)\\b(?:\\s+\\w+){0,4}\\s+${term}\\b`, 'i');
+  return re.test(t);
+}
+
+function hasPositiveMention(t: string, term: string) {
+  return hasWord(t, term) && !isNegatedMention(t, term);
+}
+
 function looksLikeStall(text: string) {
   const t = normalizeWhatsApp(text);
   if (!t) return false;
@@ -385,10 +415,15 @@ function buildSystemPrompt(todayISO: string) {
 
 REGRAS CRÍTICAS:
 1. TODO catálogo/preço/disponibilidade vem do Supabase via ferramentas - NUNCA invente/negue sem consultar
-2. Se cliente pedir "buggy", "quadriciclo", "barco", ou qualquer produto: chame consultar_passeios ANTES de responder
-3. NUNCA diga "não temos X" sem consultar_passeios ou buscar_passeio_especifico
-4. Mensagens CURTAS (máx 3 linhas), sem emojis, sem repetição
-5. Use dados do <tool_result> para responder - nunca mostre JSON/IDs/tags ao cliente
+2. Para perguntas de regras/logística/políticas (cancelamento, reembolso, taxa de embarque, ponto de encontro, crianças, horários, o que inclui): chame consultar_conhecimento ANTES de responder
+3. Para dúvidas de valores/opções ou quando citar um passeio (barco, buggy, quadriciclo, mergulho, transfer, city tour etc.): chame consultar_passeios (ou buscar_passeio_especifico se tiver nome) ANTES de responder
+4. Se o cliente apenas cumprimentar (oi/olá/bom dia/boa tarde/boa noite): responda educado e ofereça ver os passeios e valores; pergunte a preferência (Barco, Buggy, Quadriciclo, Mergulho, Transfer)
+5. NUNCA diga "não temos X" sem consultar_passeios ou buscar_passeio_especifico
+6. Tom: calmo, educado, direto e vendedor
+7. Se o cliente pedir para ver passeios/valores/opções: liste opções com preço e peça para responder o número. Só peça data e número de pessoas depois que ele escolher o passeio.
+8. Para "passeio de barco": ao consultar catálogo, use termo curto (ex: {"termo":"barco"}) para trazer opções relacionadas (inclusive city tour/combos cujo texto mencione barco). Não use termos longos tipo "passeio de barco".
+9. Mensagens CURTAS (máx 3 linhas), sem emojis, sem repetição
+10. Use dados do <tool_result> para responder - nunca mostre JSON/IDs/tags ao cliente
 
 FERRAMENTAS (sintaxe: [TOOL:nome]{json}[/TOOL]):
 - consultar_passeios: busca catálogo (termo opcional)
@@ -613,13 +648,15 @@ function handleOptionSelection(context: ConversationContext, userMessage: string
   const ids = Array.isArray(context.tempData?.optionIds) ? context.tempData?.optionIds : [];
   const options = Array.isArray(context.tempData?.optionList) ? context.tempData?.optionList : [];
   const rawOptions = Array.isArray((context.tempData as any)?.optionRawList) ? (context.tempData as any).optionRawList : [];
-  if (!ids.length) return false;
 
-  let idx = extractOptionIndexStrict(userMessage, ids.length);
+  const max = Math.max(ids.length, options.length, rawOptions.length);
+  if (max <= 0) return false;
 
-  const matchAgainst = rawOptions.length === ids.length ? rawOptions : options;
+  let idx = extractOptionIndexStrict(userMessage, max);
 
-  if (idx == null && matchAgainst.length === ids.length && matchAgainst.length > 0) {
+  const matchAgainst = rawOptions.length ? rawOptions : options;
+
+  if (idx == null && matchAgainst.length > 0) {
     const match = bestFuzzyOptionIndex(userMessage, matchAgainst);
     if (match && match.score >= 0.62 && match.score - (match.secondScore ?? 0) >= 0.08) {
       idx = match.index + 1;
@@ -628,22 +665,18 @@ function handleOptionSelection(context: ConversationContext, userMessage: string
 
   if (idx == null) return false;
 
+  const selectedName = rawOptions[idx - 1] || options[idx - 1];
+  if (!selectedName) return false;
+
   const selectedId = ids[idx - 1];
-  if (!selectedId) return false;
 
   context.tempData ||= {};
-  context.tempData.passeioId = selectedId;
-  context.tempData.passeioNome = (rawOptions.length === ids.length ? rawOptions[idx - 1] : undefined) || options[idx - 1];
+  if (selectedId) context.tempData.passeioId = selectedId;
+  context.tempData.passeioNome = selectedName;
 
-  // If fallback to formatted option string, clean the price
-  // preserve hyphen (-) in names like "Passeio - Roteiro X", only split on em/en dashes used for price
   if (context.tempData.passeioNome && (context.tempData.passeioNome.includes('—') || context.tempData.passeioNome.includes('–'))) {
      context.tempData.passeioNome = context.tempData.passeioNome.split(/(?:—|–)/)[0].trim();
   }
-
-  // delete context.tempData.optionIds;
-  // delete (context.tempData as any).optionRawList;
-  // delete context.tempData.optionList;
 
   return true;
 }
@@ -693,7 +726,7 @@ function getPrefetchMenuResponsePlan(userMessage: string, prefetch: PasseiosPref
   const t = normalizeWhatsApp(userMessage);
   if (!t) return { kind: 'none' };
 
-  if (t.includes('buggy')) return { kind: 'buggy' };
+  if (prefetch?.termo === 'buggy' || hasPositiveMention(t, 'buggy')) return { kind: 'buggy' };
 
   const wantsAll =
     (t.includes('todos os passeios') || t.includes('todas as opcoes') || t.includes('todas opcoes')) ||
@@ -775,15 +808,15 @@ function getPasseiosPrefetchPlan(userMessage: string, context: ConversationConte
     t.includes('quais passeios');
 
   let termo: string | undefined;
-  if (t.includes('buggy')) termo = 'buggy';
-  else if (t.includes('quadriciclo')) termo = 'quadriciclo';
-  else if (t.includes('toboagua')) termo = 'toboagua';
+  if (hasPositiveMention(t, 'buggy')) termo = 'buggy';
+  else if (hasPositiveMention(t, 'quadriciclo')) termo = 'quadriciclo';
+  else if (hasPositiveMention(t, 'toboagua')) termo = 'toboagua';
   else if (t.includes('open bar') || t.includes('open food')) termo = 'open bar';
-  else if (t.includes('transfer')) termo = 'transfer';
-  else if (t.includes('city')) termo = 'city';
-  else if (t.includes('barco')) termo = 'barco';
-  else if (t.includes('mergulho')) termo = 'mergulho';
-  else if (t.includes('jetski') || t.includes('jet ski')) termo = 'jetski';
+  else if (hasPositiveMention(t, 'transfer')) termo = 'transfer';
+  else if (hasPositiveMention(t, 'city')) termo = 'city';
+  else if (hasPositiveMention(t, 'barco')) termo = 'barco';
+  else if (hasPositiveMention(t, 'mergulho')) termo = 'mergulho';
+  else if (hasPositiveMention(t, 'jetski')) termo = 'jetski';
 
   const shouldConsider = wantsList || !!termo;
   if (!shouldConsider) return { should: false };
@@ -824,6 +857,20 @@ export async function runAgentLoop(params: {
     return directReply;
   }
 
+  const looseIdx = extractOptionIndexLoose(userMessage);
+  if (looseIdx != null) {
+    const ids = Array.isArray(context.tempData?.optionIds) ? context.tempData.optionIds : [];
+    const options = Array.isArray(context.tempData?.optionList) ? context.tempData.optionList : [];
+    const rawOptions = Array.isArray((context.tempData as any)?.optionRawList) ? (context.tempData as any).optionRawList : [];
+    const max = Math.max(ids.length, options.length, rawOptions.length);
+
+    if (max > 0 && (looseIdx < 1 || looseIdx > max)) {
+      const lines = formatOptionsMenuLines(options.length ? options : rawOptions);
+      if (!lines) return `Opção inválida. Responda um número de 1 a ${max}.`;
+      return `Opção inválida. Responda um número de 1 a ${max}.\n${lines}`;
+    }
+  }
+
   const allowedTools = new Set<ToolName>([
     'consultar_passeios',
     'buscar_passeio_especifico',
@@ -834,31 +881,16 @@ export async function runAgentLoop(params: {
     'cancelar_reserva'
   ]);
 
-  const maxSteps = 6;
+  const maxSteps = 8;
   let hasToolResultThisRun = false;
 
-  const prefetch = getPasseiosPrefetchPlan(userMessage, context);
-  if (prefetch.should) {
-    const toolParams = prefetch.termo ? { termo: prefetch.termo } : {};
-    let toolResult: any;
-    try {
-       const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Tool timeout')), 8000));
-       toolResult = await Promise.race([
-         executeTool('consultar_passeios', toolParams, { telefone, conversation: context }),
-         timeoutPromise
-       ]);
-    } catch {
-       toolResult = { success: false, error: { message: 'Timeout busque novamente' } };
-    }
-
+  const mustUseTool = shouldForceToolForUserMessage(userMessage);
+  if (mustUseTool) {
     context.conversationHistory.push({
       role: 'system',
-      content: `<tool_result name="consultar_passeios">${JSON.stringify(toolResult)}</tool_result>`
+      content:
+        'INSTRUÇÃO: Antes de responder ao cliente, faça pelo menos uma chamada de ferramenta. Se o cliente pediu valores/opções/catálogo, use [TOOL:consultar_passeios]{}[/TOOL]. Se for regra/política/logística, use [TOOL:consultar_conhecimento]{"termo":"..."}[/TOOL]. Responda APENAS com um bloco [TOOL:...]...[/TOOL].'
     });
-    hasToolResultThisRun = true;
-
-    const direct = buildPrefetchMenuResponse(userMessage, context, prefetch);
-    if (direct) return direct;
   }
 
   for (let step = 0; step < maxSteps; step++) {
@@ -892,11 +924,7 @@ export async function runAgentLoop(params: {
       const isQuestion = looksLikeQuestionOrSlotRequest(cleaned);
 
       if (!hasToolResultThisRun) {
-        const hasAnyToolResultInHistory = (context.conversationHistory || []).some((m) =>
-          m?.role === 'system' && typeof m.content === 'string' && /<tool_result\b/i.test(m.content)
-        );
-
-        const force = !hasAnyToolResultInHistory && shouldForceToolForUserMessage(userMessage) && !isQuestion;
+        const force = shouldForceToolForUserMessage(userMessage);
 
         if (force || stall || hallucinated) {
           context.conversationHistory.push({
@@ -952,18 +980,61 @@ export async function runAgentLoop(params: {
             executeTool(name, toolParams, { telefone, conversation: context }),
             timeoutPromise
           ]);
-        } catch (e: any) {
+        } catch {
           result = {
             success: false,
             error: { code: 'timeout', message: 'A ferramenta demorou muito para responder.' }
           };
         }
-        return `<tool_result name="${name}">${JSON.stringify(result)}</tool_result>`;
+
+        const tag = `<tool_result name="${name}">${JSON.stringify(result)}</tool_result>`;
+        return { name, result, tag };
       });
 
-      const results = await Promise.all(promises);
-      results.forEach(r => context.conversationHistory.push({ role: 'system', content: r }));
+      const executed = await Promise.all(promises);
+      executed.forEach((r) => context.conversationHistory.push({ role: 'system', content: r.tag }));
       hasToolResultThisRun = true;
+
+      const wantsMenu = (() => {
+        const t = normalizeWhatsApp(userMessage);
+        if (!t) return false;
+        const cues = [
+          'opcoes',
+          'opcao',
+          'catalogo',
+          'valores',
+          'valor',
+          'preco',
+          'quanto',
+          'custa',
+          'passeio',
+          'passeios',
+          'barco',
+          'buggy',
+          'quadriciclo',
+          'mergulho',
+          'transfer',
+          'city',
+          'combo'
+        ];
+        return cues.some((c) => t.includes(c));
+      })();
+
+      const hadCatalog = executed.some(
+        (r) => (r.name === 'consultar_passeios' || r.name === 'buscar_passeio_especifico') && r.result?.success
+      );
+
+      if (wantsMenu && hadCatalog) {
+        const options = Array.isArray(context.tempData?.optionList) ? context.tempData.optionList : [];
+        const lines = formatOptionsMenuLines(options);
+        if (lines) return `Passeios disponíveis:\n${lines}\n\nResponda o número.`;
+      }
+
+      context.conversationHistory.push({
+        role: 'system',
+        content:
+          'INSTRUÇÃO: Agora responda em TEXTO FINAL ao cliente usando os últimos <tool_result>. Não chame mais ferramentas e não escreva blocos [TOOL:...] nesta resposta.'
+      });
     }
   }
 

@@ -65,58 +65,80 @@ export async function groqChat(params: {
 }) {
   const groq = getGroqClient();
 
-  const model = params.model || process.env.GROQ_REASONING_MODEL || 'llama-3.3-70b-versatile';
+  const primaryModel = params.model || process.env.GROQ_REASONING_MODEL || 'openai/gpt-oss-120b';
+  const fallbackRaw = process.env.GROQ_MODEL_FALLBACKS || 'llama-3.3-70b-versatile';
+  const candidates = Array.from(
+    new Set([
+      primaryModel,
+      ...fallbackRaw.split(',').map((s) => s.trim()).filter(Boolean)
+    ].filter(Boolean))
+  );
+
   const maxRetries = getEnvInt('GROQ_MAX_RETRIES', 1);
   const timeoutMs = getEnvInt('GROQ_TIMEOUT_MS', 9000);
 
+  const isModelRoutingError = (err: any) => {
+    const status = getStatusCode(err);
+    if (status !== 400 && status !== 404) return false;
+    const msg = String(err?.message || '').toLowerCase();
+    if (!msg.includes('model')) return false;
+    return msg.includes('not found') || msg.includes('does not exist') || msg.includes('invalid') || msg.includes('unknown');
+  };
+
   let lastErr: any;
 
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+  for (const model of candidates) {
+    lastErr = undefined;
 
-    try {
-      const payload = {
-        model,
-        messages: params.messages,
-        temperature: params.temperature ?? 0.4,
-        max_tokens: params.max_tokens ?? 450,
-        top_p: params.top_p ?? 0.9
-      };
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-      let completion: any;
       try {
-        completion = await (groq.chat.completions.create as any)(payload, { signal: controller.signal });
-      } catch (err: any) {
-        const msg = String(err?.message || '').toLowerCase();
-        if (msg.includes('signal') || msg.includes('unexpected') || msg.includes('unknown')) {
-           // If we are retrying a weird signal error, we MUST still respect a timeout, 
-           // otherwise we risk hanging forever. We'll use a slightly shorter fallback timeout 
-           // for this second-chance call to ensure we don't blow the budget.
-           const fallbackController = new AbortController();
-           const fallbackTimer = setTimeout(() => fallbackController.abort(), 10000);
-           try {
-             completion = await (groq.chat.completions.create as any)(payload, { signal: fallbackController.signal });
-           } finally {
-             clearTimeout(fallbackTimer);
-           }
-        } else {
-          throw err;
+        const payload = {
+          model,
+          messages: params.messages,
+          temperature: params.temperature ?? 0.4,
+          max_tokens: params.max_tokens ?? 450,
+          top_p: params.top_p ?? 0.9
+        };
+
+        let completion: any;
+        try {
+          completion = await (groq.chat.completions.create as any)(payload, { signal: controller.signal });
+        } catch (err: any) {
+          const msg = String(err?.message || '').toLowerCase();
+          if (msg.includes('signal') || msg.includes('unexpected') || msg.includes('unknown')) {
+            const fallbackController = new AbortController();
+            const fallbackTimer = setTimeout(() => fallbackController.abort(), 10000);
+            try {
+              completion = await (groq.chat.completions.create as any)(payload, { signal: fallbackController.signal });
+            } finally {
+              clearTimeout(fallbackTimer);
+            }
+          } else {
+            throw err;
+          }
         }
+
+        const content = completion?.choices?.[0]?.message?.content;
+        return (content || '').trim();
+      } catch (err: any) {
+        lastErr = err;
+
+        const shouldRetry = attempt < maxRetries && isRetryableError(err);
+        if (shouldRetry) {
+          const base = 900;
+          const backoff = Math.min(12000, base * Math.pow(2, attempt));
+          await sleep(jitter(backoff));
+          continue;
+        }
+
+        if (isModelRoutingError(err)) break;
+        throw err;
+      } finally {
+        clearTimeout(timer);
       }
-
-      const content = completion?.choices?.[0]?.message?.content;
-      return (content || '').trim();
-    } catch (err: any) {
-      lastErr = err;
-      const shouldRetry = attempt < maxRetries && isRetryableError(err);
-      if (!shouldRetry) throw err;
-
-      const base = 900;
-      const backoff = Math.min(12000, base * Math.pow(2, attempt));
-      await sleep(jitter(backoff));
-    } finally {
-      clearTimeout(timer);
     }
   }
 
