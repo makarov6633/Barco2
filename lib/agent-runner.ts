@@ -37,6 +37,8 @@ function applyWhatsAppExpansions(value?: string) {
   s = s.replace(/\bprox\b/g, 'proximo');
   s = s.replace(/\bopenbar\b/g, 'open bar');
   s = s.replace(/\bopenfood\b/g, 'open food');
+  s = s.replace(/\bbraco\b/g, 'barco');
+  s = s.replace(/\bbarc\b/g, 'barco');
   s = s.replace(/\bjet\s*ski\b/g, 'jetski');
   s = s.replace(/\b(\d{1,2})\s*(?:p|pax)\b/g, '$1 pessoas');
 
@@ -631,6 +633,7 @@ function enrichToolParams(name: ToolName, rawParams: any, context: ConversationC
 
 function updateSlotsFromUserMessage(context: ConversationContext, userMessage: string) {
   context.tempData ||= {};
+  const nowISO = new Date().toISOString();
 
   const cpf = extractCpfCnpjDigits(userMessage);
   if (cpf) context.tempData.cpf = cpf;
@@ -644,13 +647,22 @@ function updateSlotsFromUserMessage(context: ConversationContext, userMessage: s
   if (paymentChoice) context.tempData.tipoPagamento = paymentChoice;
 
   const dateISO = normalizeDateToISO(expanded);
-  if (dateISO) context.tempData.data = dateISO;
+  if (dateISO) {
+    context.tempData.data = dateISO;
+    context.tempData.dataUpdatedAt = nowISO;
+  }
 
   const pessoas = extractNumPessoas(expanded);
-  if (pessoas != null) context.tempData.numPessoas = pessoas;
+  if (pessoas != null) {
+    context.tempData.numPessoas = pessoas;
+    context.tempData.numPessoasUpdatedAt = nowISO;
+  }
 
   const name = extractNameCandidate(userMessage);
-  if (name && !context.nome) context.nome = name;
+  if (name && !context.nome) {
+    context.nome = name;
+    context.tempData.nomeUpdatedAt = nowISO;
+  }
 }
 
 function handleOptionSelection(context: ConversationContext, userMessage: string): boolean {
@@ -682,6 +694,7 @@ function handleOptionSelection(context: ConversationContext, userMessage: string
   context.tempData ||= {};
   if (selectedId) context.tempData.passeioId = selectedId;
   context.tempData.passeioNome = selectedName;
+  context.tempData.passeioSelectedAt = new Date().toISOString();
 
   if (context.tempData.passeioNome && (context.tempData.passeioNome.includes('—') || context.tempData.passeioNome.includes('–'))) {
      context.tempData.passeioNome = context.tempData.passeioNome.split(/(?:—|–)/)[0].trim();
@@ -693,17 +706,16 @@ function handleOptionSelection(context: ConversationContext, userMessage: string
 function buildPostSelectionResponse(context: ConversationContext): string {
   const passeio = context.tempData?.passeioNome || context.tempData?.passeio || 'o passeio';
   const nome = context.nome;
-  const data = context.tempData?.data;
+  const dataISO = context.tempData?.data;
   const pessoas = context.tempData?.numPessoas;
+
+  const todayISO = getBrazilTodayISO();
+  const dateLooksValid = !!(dataISO && /^\d{4}-\d{2}-\d{2}$/.test(dataISO) && dataISO >= todayISO);
 
   const missing: string[] = [];
   if (!nome) missing.push('seu nome');
-  if (!data) missing.push('a data');
-  if (pessoas == null) missing.push('quantas pessoas');
-
-  if (missing.length === 0) {
-    return `Perfeito! Vou criar a reserva de ${passeio}. Um momento.`;
-  }
+  if (!dateLooksValid || !context.tempData?.dataUpdatedAt) missing.push('a data');
+  if (pessoas == null || !context.tempData?.numPessoasUpdatedAt) missing.push('quantas pessoas');
 
   if (missing.length === 3) {
     return `Escolheu ${passeio}. Preciso de: seu nome, data e quantas pessoas.`;
@@ -711,6 +723,10 @@ function buildPostSelectionResponse(context: ConversationContext): string {
 
   if (missing.length === 1) {
     return `Escolheu ${passeio}. Só falta: ${missing[0]}.`;
+  }
+
+  if (missing.length === 0) {
+    return `Escolheu ${passeio}. Confirme: ${formatISOToBR(dataISO)} para ${pessoas} pessoa(s).`;
   }
 
   return `Escolheu ${passeio}. Faltam: ${missing.join(', ')}.`;
@@ -776,7 +792,10 @@ function buildPrefetchMenuResponse(userMessage: string, context: ConversationCon
     return 'Nenhuma opção disponível no momento.';
   }
 
-  return `Passeios disponíveis:\n${lines}\n\nResponda o número.`;
+  const hint = (context.tempData as any)?.typoHint;
+  if (hint) delete (context.tempData as any).typoHint;
+  const prefix = hint === 'braco' ? 'Você quis dizer passeio de barco?\n' : '';
+  return `${prefix}Passeios disponíveis:\n${lines}\n\nResponda o número.`;
 }
 
 function getRecentOptionStrings(context: ConversationContext) {
@@ -1026,7 +1045,12 @@ async function runPlannerToolPhase(params: {
   if (wantsMenu && hadCatalog) {
     const options = Array.isArray(context.tempData?.optionList) ? context.tempData.optionList : [];
     const lines = formatOptionsMenuLines(options);
-    if (lines) return { kind: 'menu' as const, text: `Passeios disponíveis:\n${lines}\n\nResponda o número.` };
+    if (lines) {
+      const hint = (context.tempData as any)?.typoHint;
+      if (hint) delete (context.tempData as any).typoHint;
+      const prefix = hint === 'braco' ? 'Você quis dizer passeio de barco?\n' : '';
+      return { kind: 'menu' as const, text: `${prefix}Passeios disponíveis:\n${lines}\n\nResponda o número.` };
+    }
   }
 
   const todayISO = getBrazilTodayISO();
@@ -1062,15 +1086,63 @@ export async function runAgentLoop(params: {
   context.conversationHistory ||= [];
   context.tempData ||= {};
 
+  const rawLower = String(userMessage || '').toLowerCase();
+  if (rawLower.includes('braco') && !rawLower.includes('barco')) {
+    (context.tempData as any).typoHint = 'braco';
+  }
+
   context.conversationHistory.push({ role: 'user', content: userMessage });
 
   updateSlotsFromUserMessage(context, userMessage);
   const justSelected = handleOptionSelection(context, userMessage);
 
   if (justSelected) {
-    const directReply = buildPostSelectionResponse(context);
-    context.conversationHistory.push({ role: 'assistant', content: directReply });
-    return directReply;
+    const todayISO = getBrazilTodayISO();
+    const nome = context.nome;
+    const dataISO = context.tempData?.data;
+    const pessoas = context.tempData?.numPessoas;
+
+    const missing: string[] = [];
+    if (!nome) missing.push('seu nome');
+
+    const dateLooksValid = !!(dataISO && /^\d{4}-\d{2}-\d{2}$/.test(dataISO) && dataISO >= todayISO);
+    if (!dateLooksValid || !context.tempData?.dataUpdatedAt) missing.push('a data');
+
+    if (pessoas == null || !context.tempData?.numPessoasUpdatedAt) missing.push('quantas pessoas');
+
+    if (missing.length) {
+      const directReply = buildPostSelectionResponse(context);
+      context.conversationHistory.push({ role: 'assistant', content: directReply });
+      return directReply;
+    }
+
+    try {
+      const result = await executeTool('criar_reserva', {}, { telefone, conversation: context });
+      const tag = `<tool_result name="criar_reserva">${JSON.stringify(result)}</tool_result>`;
+      context.conversationHistory.push({ role: 'system', content: tag });
+
+      if (result?.success) {
+        const data = result.data || {};
+        const passeioNome = data.passeio_nome || context.tempData?.passeioNome || 'o passeio';
+        const when = data.data || context.tempData?.data || '';
+        const np = data.num_pessoas || context.tempData?.numPessoas;
+        const total = typeof data.valor_total === 'number' ? `R$ ${data.valor_total.toFixed(2).replace('.', ',')}` : undefined;
+        const line1 = `Reserva criada: ${passeioNome} — ${formatISOToBR(when)} (${np} pessoa(s)).`;
+        const line2 = total ? `Total: ${total}.` : '';
+        const line3 = 'PIX ou BOLETO?';
+        const reply = [line1, line2, line3].filter(Boolean).join('\n');
+        context.conversationHistory.push({ role: 'assistant', content: reply });
+        return reply;
+      }
+
+      const directReply = buildPostSelectionResponse(context);
+      context.conversationHistory.push({ role: 'assistant', content: directReply });
+      return directReply;
+    } catch {
+      const directReply = buildPostSelectionResponse(context);
+      context.conversationHistory.push({ role: 'assistant', content: directReply });
+      return directReply;
+    }
   }
 
   const looseIdx = extractOptionIndexLoose(userMessage);
@@ -1245,7 +1317,12 @@ export async function runAgentLoop(params: {
       if (wantsMenu && hadCatalog) {
         const options = Array.isArray(context.tempData?.optionList) ? context.tempData.optionList : [];
         const lines = formatOptionsMenuLines(options);
-        if (lines) return `Passeios disponíveis:\n${lines}\n\nResponda o número.`;
+        if (lines) {
+          const hint = (context.tempData as any)?.typoHint;
+          if (hint) delete (context.tempData as any).typoHint;
+          const prefix = hint === 'braco' ? 'Você quis dizer passeio de barco?\n' : '';
+          return `${prefix}Passeios disponíveis:\n${lines}\n\nResponda o número.`;
+        }
       }
 
       context.conversationHistory.push({
