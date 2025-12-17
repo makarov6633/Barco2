@@ -44,6 +44,27 @@ async function runScenario(name: string, telefone: string, steps: Step[]) {
 async function main() {
   const base = `+55999999${Math.floor(1000 + Math.random() * 8999)}`;
 
+  await runScenario('Negação - barco vs buggy', `${base}00`, [
+    {
+      user: 'quero passeio de barco e nao buggy',
+      expect: (reply) => {
+        assert(!containsAny(reply, ['opções de buggy', 'opcoes de buggy']), 'Não deveria oferecer buggy quando o cliente disse "não buggy"');
+      }
+    },
+    {
+      user: 'barco',
+      expect: (reply) => {
+        assert(containsAny(reply, ['passeios disponiveis', 'responda o numero', '1)']), 'Esperava menu de passeios');
+      }
+    },
+    {
+      user: '4',
+      expect: (reply) => {
+        assert(!containsAny(reply, ['opções de buggy', 'opcoes de buggy', 'buggy exclusivo']), 'Não deveria cair para buggy ao escolher número');
+      }
+    }
+  ]);
+
   await runScenario('Preço - quadriciclo', `${base}01`, [
     {
       user: 'Quanto custa quadriciclo?',

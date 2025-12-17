@@ -312,20 +312,58 @@ export async function saveConversationContext(context: ConversationContext): Pro
           metadata: safeContext.metadata
         };
 
-        const { error } = await supabase
-          .from('conversation_contexts')
-          .upsert(extendedPayload, { onConflict: 'telefone' });
+        const upsertOrManual = async (payload: any) => {
+          const { error } = await supabase
+            .from('conversation_contexts')
+            .upsert(payload, { onConflict: 'telefone' });
 
-        if (error) {
+          if (!error) return;
+
           const msg = `${(error as any)?.message || ''}`.toLowerCase();
-          if (msg.includes('column')) {
+          const code = String((error as any)?.code || '').toUpperCase();
+
+          const looksLikeSchemaMismatch = msg.includes('column');
+          const looksLikeMissingUnique = code === '42P10' || msg.includes('on conflict') || msg.includes('no unique') || msg.includes('no unique or exclusion constraint');
+
+          if (looksLikeSchemaMismatch) {
             await supabase
               .from('conversation_contexts')
               .upsert(minimalPayload, { onConflict: 'telefone' });
-          } else {
-             console.error('Context save error (json):', error);
+            return;
           }
-        }
+
+          if (!looksLikeMissingUnique) {
+            console.error('Context save error (json):', error);
+            return;
+          }
+
+          const { data: existing, error: selErr } = await supabase
+            .from('conversation_contexts')
+            .select('id')
+            .eq('telefone', safeContext.telefone)
+            .limit(1)
+            .maybeSingle();
+
+          if (selErr) {
+            console.error('Context save select error (json):', selErr);
+          }
+
+          if (existing?.id) {
+            const { error: updErr } = await supabase
+              .from('conversation_contexts')
+              .update(payload)
+              .eq('id', existing.id);
+            if (updErr) console.error('Context save update error (json):', updErr);
+            return;
+          }
+
+          const { error: insErr } = await supabase
+            .from('conversation_contexts')
+            .insert(payload);
+          if (insErr) console.error('Context save insert error (json):', insErr);
+        };
+
+        await upsertOrManual(extendedPayload);
       } else {
         const payload = {
           telefone: safeContext.telefone,
@@ -343,8 +381,42 @@ export async function saveConversationContext(context: ConversationContext): Pro
         const { error } = await supabase
           .from('conversation_contexts')
           .upsert(payload, { onConflict: 'telefone' });
-          
-        if (error) console.error('Context save error (columns):', error);
+
+        if (!error) return;
+
+        const msg = `${(error as any)?.message || ''}`.toLowerCase();
+        const code = String((error as any)?.code || '').toUpperCase();
+        const looksLikeMissingUnique = code === '42P10' || msg.includes('on conflict') || msg.includes('no unique') || msg.includes('no unique or exclusion constraint');
+
+        if (!looksLikeMissingUnique) {
+          console.error('Context save error (columns):', error);
+          return;
+        }
+
+        const { data: existing, error: selErr } = await supabase
+          .from('conversation_contexts')
+          .select('id')
+          .eq('telefone', safeContext.telefone)
+          .limit(1)
+          .maybeSingle();
+
+        if (selErr) {
+          console.error('Context save select error (columns):', selErr);
+        }
+
+        if (existing?.id) {
+          const { error: updErr } = await supabase
+            .from('conversation_contexts')
+            .update(payload)
+            .eq('id', existing.id);
+          if (updErr) console.error('Context save update error (columns):', updErr);
+          return;
+        }
+
+        const { error: insErr } = await supabase
+          .from('conversation_contexts')
+          .insert(payload);
+        if (insErr) console.error('Context save insert error (columns):', insErr);
       }
     } catch (error) {
       console.error('Erro ao salvar contexto (internal):', error);
