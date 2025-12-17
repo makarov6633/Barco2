@@ -900,6 +900,8 @@ Regras:
 - Se a mensagem pede regras/logística/políticas (cancelamento, reembolso, taxa, ponto de encontro, crianças, horários, o que inclui), SEMPRE action="tool" e chame consultar_conhecimento.
 - Se o cliente cita um tipo de passeio (barco/buggy/quadriciclo/mergulho/transfer/city/combo), use consultar_passeios com termo curto (ex: "barco").
 - Se o cliente já escolheu um passeio (ESTADO mostra Passeio selecionado), não chame consultar_passeios só para listar de novo.
+- Se a mensagem estiver ambígua (possível erro de digitação) e você precisar confirmar, use action="reply" para pedir esclarecimento.
+- Se você não tiver certeza do assunto, prefira action="tool" e chame consultar_conhecimento com {"termo": "<mensagem do cliente>"}.
 - Não invente parâmetros; se não tiver termo, use {}.
 - Nunca chame ferramenta que não exista.
 
@@ -1000,7 +1002,11 @@ async function runPlannerToolPhase(params: {
     decision = undefined;
   }
 
-  let toolCalls = (decision?.tool_calls || []).filter((c) => allowedTools.has(c.name));
+  if (decision?.action === 'reply' && typeof decision.reply === 'string' && decision.reply.trim()) {
+    return { kind: 'reply' as const, text: stripEmojis(decision.reply.trim()) };
+  }
+
+  let toolCalls = (decision?.action === 'tool' ? (decision?.tool_calls || []) : []).filter((c) => allowedTools.has(c.name));
   if (!toolCalls.length) {
     toolCalls = buildHeuristicToolCalls(userMessage, context).filter((c) => allowedTools.has(c.name));
   }
@@ -1079,19 +1085,54 @@ export async function runAgentLoop(params: {
   userMessage: string;
   context: ConversationContext;
 }) {
-  const { telefone, userMessage, context } = params;
+  const { telefone, context } = params;
+  const originalUserMessage = params.userMessage;
+  let effectiveUserMessage = originalUserMessage;
   const loopStartTime = Date.now();
   const GLOBAL_TIMEOUT_MS = 25000;
 
   context.conversationHistory ||= [];
   context.tempData ||= {};
 
-  const rawLower = String(userMessage || '').toLowerCase();
-  if (rawLower.includes('braco') && !rawLower.includes('barco')) {
-    (context.tempData as any).typoHint = 'braco';
+  const nowISO = new Date().toISOString();
+  const rawLower = String(originalUserMessage || '').toLowerCase();
+
+  const isYes = (msg: string) => {
+    const t = normalizeWhatsApp(msg);
+    if (!t) return false;
+    return ['sim', 'isso', 'exato', 'correto', 's', 'ss', 'barco'].includes(t) || t.startsWith('sim ') || t === 'isso ai' || t === 'isso mesmo';
+  };
+
+  const awaitingTerm = String((context.tempData as any)?.awaitingTypoConfirmTerm || '').trim();
+  const awaitingAt = String((context.tempData as any)?.awaitingTypoConfirmAt || '').trim();
+  const awaitingAgeOk = (() => {
+    if (!awaitingAt) return false;
+    const ts = Date.parse(awaitingAt);
+    if (!Number.isFinite(ts)) return false;
+    return (Date.now() - ts) <= 10 * 60 * 1000;
+  })();
+
+  if (awaitingTerm && awaitingAgeOk && isYes(originalUserMessage)) {
+    (context.tempData as any).awaitingTypoConfirmTerm = undefined;
+    (context.tempData as any).awaitingTypoConfirmAt = undefined;
+    effectiveUserMessage = awaitingTerm;
+  } else if (awaitingTerm && !awaitingAgeOk) {
+    (context.tempData as any).awaitingTypoConfirmTerm = undefined;
+    (context.tempData as any).awaitingTypoConfirmAt = undefined;
   }
 
-  context.conversationHistory.push({ role: 'user', content: userMessage });
+  if (rawLower.includes('braco') && !rawLower.includes('barco')) {
+    (context.tempData as any).awaitingTypoConfirmTerm = 'barco';
+    (context.tempData as any).awaitingTypoConfirmAt = nowISO;
+    const clarification = "O senhor está falando de barco? Você digitou 'braco'.";
+    context.conversationHistory.push({ role: 'user', content: originalUserMessage });
+    context.conversationHistory.push({ role: 'assistant', content: clarification });
+    return clarification;
+  }
+
+  let userMessage = effectiveUserMessage;
+
+  context.conversationHistory.push({ role: 'user', content: originalUserMessage });
 
   updateSlotsFromUserMessage(context, userMessage);
   const justSelected = handleOptionSelection(context, userMessage);
@@ -1172,15 +1213,12 @@ export async function runAgentLoop(params: {
   const maxSteps = 8;
   let hasToolResultThisRun = false;
 
-  const mustUseTool = shouldForceToolForUserMessage(userMessage);
-  if (mustUseTool) {
-    try {
-      const planned = await runPlannerToolPhase({ telefone, userMessage, context, allowedTools });
-      context.conversationHistory.push({ role: 'assistant', content: planned.text });
-      return planned.text;
-    } catch {
-      // continue to legacy loop
-    }
+  try {
+    const planned = await runPlannerToolPhase({ telefone, userMessage, context, allowedTools });
+    context.conversationHistory.push({ role: 'assistant', content: planned.text });
+    return planned.text;
+  } catch {
+    // continue to legacy loop
   }
 
   for (let step = 0; step < maxSteps; step++) {

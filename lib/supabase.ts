@@ -91,6 +91,8 @@ export interface ConversationContext {
     dataUpdatedAt?: string;
     numPessoasUpdatedAt?: string;
     nomeUpdatedAt?: string;
+    awaitingTypoConfirmTerm?: string;
+    awaitingTypoConfirmAt?: string;
   };
   lastIntent?: string;
   lastMessage?: string;
