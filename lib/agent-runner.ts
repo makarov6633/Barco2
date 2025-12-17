@@ -900,8 +900,10 @@ Regras:
 - Se a mensagem pede regras/logística/políticas (cancelamento, reembolso, taxa, ponto de encontro, crianças, horários, o que inclui), SEMPRE action="tool" e chame consultar_conhecimento.
 - Se o cliente cita um tipo de passeio (barco/buggy/quadriciclo/mergulho/transfer/city/combo), use consultar_passeios com termo curto (ex: "barco").
 - Se o cliente já escolheu um passeio (ESTADO mostra Passeio selecionado), não chame consultar_passeios só para listar de novo.
+- Se o cliente pedir "quero marcar um passeio" sem dizer qual (barco/buggy/quadriciclo/mergulho/transfer), use action="reply" e pergunte a preferência.
 - Se a mensagem estiver ambígua (possível erro de digitação) e você precisar confirmar, use action="reply" para pedir esclarecimento.
 - Se você não tiver certeza do assunto, prefira action="tool" e chame consultar_conhecimento com {"termo": "<mensagem do cliente>"}.
+- Se já existir Passeio selecionado + Data válida + Pessoas, e o cliente confirmar que quer reservar/fechar/pagar, use action="tool" e chame criar_reserva.
 - Não invente parâmetros; se não tiver termo, use {}.
 - Nunca chame ferramenta que não exista.
 
@@ -940,6 +942,11 @@ function parsePlannerDecision(raw: string): PlannerDecision | undefined {
 
 function buildHeuristicToolCalls(userMessage: string, context: ConversationContext): PlannedToolCall[] {
   const t = normalizeWhatsApp(userMessage);
+
+  const genericBooking = t.includes('marcar um passeio') || t === 'quero marcar um passeio' || t === 'quero marcar passeio' || t.includes('gostaria de marcar um passeio');
+  if (genericBooking && !['barco','buggy','quadriciclo','mergulho','transfer','city','combo','lancha','escuna','jetski','paramotor'].some((k) => t.includes(k))) {
+    return [{ name: 'consultar_conhecimento', params: { termo: userMessage } }];
+  }
 
   const policyTerms = [
     'cancelar',
@@ -1080,6 +1087,17 @@ async function runPlannerToolPhase(params: {
   return { kind: 'reply' as const, text: cleaned || 'Desculpe, tive uma instabilidade. Pode enviar novamente sua solicitação em uma frase?' };
 }
 
+function looksLikePriceDispute(text: string) {
+  const t = normalizeWhatsApp(text);
+  if (!t) return false;
+  if (t.includes('por que') || t.includes('pq')) {
+    if (t.includes('valor') || t.includes('preco') || t.includes('preço') || t.includes('custa') || t.match(/\br\$\b/i) || /\d+[\.,]\d{2}/.test(t)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export async function runAgentLoop(params: {
   telefone: string;
   userMessage: string;
@@ -1135,6 +1153,29 @@ export async function runAgentLoop(params: {
   context.conversationHistory.push({ role: 'user', content: originalUserMessage });
 
   updateSlotsFromUserMessage(context, userMessage);
+
+  if (looksLikePriceDispute(originalUserMessage) && context.tempData?.passeioNome && context.tempData?.numPessoas != null) {
+    try {
+      const match = await executeTool('buscar_passeio_especifico', { termo: context.tempData.passeioNome }, { telefone, conversation: context });
+      const tag = `<tool_result name="buscar_passeio_especifico">${JSON.stringify(match)}</tool_result>`;
+      context.conversationHistory.push({ role: 'system', content: tag });
+
+      const p = Array.isArray(match?.data) ? match.data[0] : undefined;
+      const unit = p?.preco_min != null ? Number(p.preco_min) : (p?.preco_max != null ? Number(p.preco_max) : undefined);
+      const qtd = context.tempData.numPessoas;
+      if (unit != null && Number.isFinite(unit) && qtd != null) {
+        const total = unit * qtd;
+        const unitBRL = `R$ ${unit.toFixed(2).replace('.', ',')}`;
+        const totalBRL = `R$ ${total.toFixed(2).replace('.', ',')}`;
+        const reply = `O valor é ${unitBRL} por pessoa. Para ${qtd} pessoa(s) dá ${totalBRL}. Quer seguir com a reserva?`;
+        context.conversationHistory.push({ role: 'assistant', content: reply });
+        return reply;
+      }
+    } catch {
+      // fall through
+    }
+  }
+
   const justSelected = handleOptionSelection(context, userMessage);
 
   if (justSelected) {
