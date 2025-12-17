@@ -37,6 +37,8 @@ function applyWhatsAppExpansions(value?: string) {
   s = s.replace(/\bprox\b/g, 'proximo');
   s = s.replace(/\bopenbar\b/g, 'open bar');
   s = s.replace(/\bopenfood\b/g, 'open food');
+  s = s.replace(/\bbraco\b/g, 'barco');
+  s = s.replace(/\bbarc\b/g, 'barco');
   s = s.replace(/\bjet\s*ski\b/g, 'jetski');
   s = s.replace(/\b(\d{1,2})\s*(?:p|pax)\b/g, '$1 pessoas');
 
@@ -184,6 +186,15 @@ function selectHistoryForPrompt(history: Array<{ role: string; content: string }
 type PaymentType = 'PIX' | 'BOLETO';
 
 type ChatMessage = { role: 'system' | 'user' | 'assistant'; content: string };
+
+type PlannedToolCall = { name: ToolName; params: any };
+
+type PlannerDecision = {
+  action: 'tool' | 'reply';
+  tool_calls?: PlannedToolCall[];
+  reply?: string;
+  wants_menu?: boolean;
+};
 
 function stripEmojis(text: string) {
   const raw = String(text || '');
@@ -622,6 +633,7 @@ function enrichToolParams(name: ToolName, rawParams: any, context: ConversationC
 
 function updateSlotsFromUserMessage(context: ConversationContext, userMessage: string) {
   context.tempData ||= {};
+  const nowISO = new Date().toISOString();
 
   const cpf = extractCpfCnpjDigits(userMessage);
   if (cpf) context.tempData.cpf = cpf;
@@ -635,13 +647,22 @@ function updateSlotsFromUserMessage(context: ConversationContext, userMessage: s
   if (paymentChoice) context.tempData.tipoPagamento = paymentChoice;
 
   const dateISO = normalizeDateToISO(expanded);
-  if (dateISO) context.tempData.data = dateISO;
+  if (dateISO) {
+    context.tempData.data = dateISO;
+    context.tempData.dataUpdatedAt = nowISO;
+  }
 
   const pessoas = extractNumPessoas(expanded);
-  if (pessoas != null) context.tempData.numPessoas = pessoas;
+  if (pessoas != null) {
+    context.tempData.numPessoas = pessoas;
+    context.tempData.numPessoasUpdatedAt = nowISO;
+  }
 
   const name = extractNameCandidate(userMessage);
-  if (name && !context.nome) context.nome = name;
+  if (name && !context.nome) {
+    context.nome = name;
+    context.tempData.nomeUpdatedAt = nowISO;
+  }
 }
 
 function handleOptionSelection(context: ConversationContext, userMessage: string): boolean {
@@ -673,6 +694,7 @@ function handleOptionSelection(context: ConversationContext, userMessage: string
   context.tempData ||= {};
   if (selectedId) context.tempData.passeioId = selectedId;
   context.tempData.passeioNome = selectedName;
+  context.tempData.passeioSelectedAt = new Date().toISOString();
 
   if (context.tempData.passeioNome && (context.tempData.passeioNome.includes('—') || context.tempData.passeioNome.includes('–'))) {
      context.tempData.passeioNome = context.tempData.passeioNome.split(/(?:—|–)/)[0].trim();
@@ -684,17 +706,16 @@ function handleOptionSelection(context: ConversationContext, userMessage: string
 function buildPostSelectionResponse(context: ConversationContext): string {
   const passeio = context.tempData?.passeioNome || context.tempData?.passeio || 'o passeio';
   const nome = context.nome;
-  const data = context.tempData?.data;
+  const dataISO = context.tempData?.data;
   const pessoas = context.tempData?.numPessoas;
+
+  const todayISO = getBrazilTodayISO();
+  const dateLooksValid = !!(dataISO && /^\d{4}-\d{2}-\d{2}$/.test(dataISO) && dataISO >= todayISO);
 
   const missing: string[] = [];
   if (!nome) missing.push('seu nome');
-  if (!data) missing.push('a data');
-  if (pessoas == null) missing.push('quantas pessoas');
-
-  if (missing.length === 0) {
-    return `Perfeito! Vou criar a reserva de ${passeio}. Um momento.`;
-  }
+  if (!dateLooksValid || !context.tempData?.dataUpdatedAt) missing.push('a data');
+  if (pessoas == null || !context.tempData?.numPessoasUpdatedAt) missing.push('quantas pessoas');
 
   if (missing.length === 3) {
     return `Escolheu ${passeio}. Preciso de: seu nome, data e quantas pessoas.`;
@@ -702,6 +723,10 @@ function buildPostSelectionResponse(context: ConversationContext): string {
 
   if (missing.length === 1) {
     return `Escolheu ${passeio}. Só falta: ${missing[0]}.`;
+  }
+
+  if (missing.length === 0) {
+    return `Escolheu ${passeio}. Confirme: ${formatISOToBR(dataISO)} para ${pessoas} pessoa(s).`;
   }
 
   return `Escolheu ${passeio}. Faltam: ${missing.join(', ')}.`;
@@ -767,7 +792,10 @@ function buildPrefetchMenuResponse(userMessage: string, context: ConversationCon
     return 'Nenhuma opção disponível no momento.';
   }
 
-  return `Passeios disponíveis:\n${lines}\n\nResponda o número.`;
+  const hint = (context.tempData as any)?.typoHint;
+  if (hint) delete (context.tempData as any).typoHint;
+  const prefix = hint === 'braco' ? 'Você quis dizer passeio de barco?\n' : '';
+  return `${prefix}Passeios disponíveis:\n${lines}\n\nResponda o número.`;
 }
 
 function getRecentOptionStrings(context: ConversationContext) {
@@ -834,27 +862,369 @@ function stripDeepSeekThink(text: string) {
     .trim();
 }
 
+function extractJsonObject(raw: string) {
+  const trimmed = String(raw || '').trim();
+  if (!trimmed) return {};
+
+  const cleaned = trimmed
+    .replace(/^```json/i, '')
+    .replace(/^```/i, '')
+    .replace(/```$/i, '')
+    .trim();
+
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error('JSON inválido');
+    return JSON.parse(match[0]);
+  }
+}
+
+function buildPlannerPrompt(context: ConversationContext) {
+  const todayISO = getBrazilTodayISO();
+  const todayBR = formatISOToBR(todayISO);
+
+  return `Você é um PLANNER de ferramentas para um atendente da Caleb's Tour (WhatsApp). Data: ${todayBR}.
+
+Responda APENAS com JSON válido (sem texto antes/depois). Schema:
+{
+  "action": "tool" | "reply",
+  "tool_calls"?: [{"name": string, "params": object}],
+  "reply"?: string,
+  "wants_menu"?: boolean
+}
+
+Regras:
+- Se a mensagem pede preço/valores/catálogo/opções, SEMPRE action="tool" e chame consultar_passeios.
+- Se a mensagem pede regras/logística/políticas (cancelamento, reembolso, taxa, ponto de encontro, crianças, horários, o que inclui), SEMPRE action="tool" e chame consultar_conhecimento.
+- Se o cliente cita um tipo de passeio (barco/buggy/quadriciclo/mergulho/transfer/city/combo), use consultar_passeios com termo curto (ex: "barco").
+- Se o cliente já escolheu um passeio (ESTADO mostra Passeio selecionado), não chame consultar_passeios só para listar de novo.
+- Se o cliente pedir "quero marcar um passeio" sem dizer qual (barco/buggy/quadriciclo/mergulho/transfer), use action="reply" e pergunte a preferência.
+- Se a mensagem estiver ambígua (possível erro de digitação) e você precisar confirmar, use action="reply" para pedir esclarecimento.
+- Se você não tiver certeza do assunto, prefira action="tool" e chame consultar_conhecimento com {"termo": "<mensagem do cliente>"}.
+- Se já existir Passeio selecionado + Data válida + Pessoas, e o cliente confirmar que quer reservar/fechar/pagar, use action="tool" e chame criar_reserva.
+- Não invente parâmetros; se não tiver termo, use {}.
+- Nunca chame ferramenta que não exista.
+
+Ferramentas permitidas: consultar_passeios, buscar_passeio_especifico, consultar_conhecimento, criar_reserva, gerar_pagamento, gerar_voucher, cancelar_reserva.
+
+${buildStateSummary(context)}`;
+}
+
+function parsePlannerDecision(raw: string): PlannerDecision | undefined {
+  try {
+    const obj = extractJsonObject(stripDeepSeekThink(raw));
+    if (!obj || typeof obj !== 'object') return undefined;
+
+    const actionRaw = String((obj as any).action || '').toLowerCase();
+    const action = actionRaw === 'tool' || actionRaw === 'reply' ? (actionRaw as any) : undefined;
+    if (!action) return undefined;
+
+    const wants_menu = (obj as any).wants_menu === true;
+
+    const tool_calls = Array.isArray((obj as any).tool_calls)
+      ? (obj as any).tool_calls
+          .map((c: any) => ({
+            name: String(c?.name || '').toLowerCase() as ToolName,
+            params: c?.params && typeof c.params === 'object' && !Array.isArray(c.params) ? c.params : {}
+          }))
+          .filter((c: any) => !!c.name)
+      : undefined;
+
+    const reply = typeof (obj as any).reply === 'string' ? String((obj as any).reply).trim() : undefined;
+
+    return { action, tool_calls, reply, wants_menu };
+  } catch {
+    return undefined;
+  }
+}
+
+function buildHeuristicToolCalls(userMessage: string, context: ConversationContext): PlannedToolCall[] {
+  const t = normalizeWhatsApp(userMessage);
+
+  const genericBooking = t.includes('marcar um passeio') || t === 'quero marcar um passeio' || t === 'quero marcar passeio' || t.includes('gostaria de marcar um passeio');
+  if (genericBooking && !['barco','buggy','quadriciclo','mergulho','transfer','city','combo','lancha','escuna','jetski','paramotor'].some((k) => t.includes(k))) {
+    return [{ name: 'consultar_conhecimento', params: { termo: userMessage } }];
+  }
+
+  const policyTerms = [
+    'cancelar',
+    'cancelamento',
+    'reembolso',
+    'estorno',
+    'taxa',
+    'embarque',
+    'ponto',
+    'encontro',
+    'endereco',
+    'endereço',
+    'crianca',
+    'criança',
+    'horario',
+    'horário',
+    'inclui',
+    'o que inclui',
+    'politica',
+    'política'
+  ];
+
+  const wantsPolicy = policyTerms.some((k) => t.includes(normalizeWhatsApp(k)));
+  if (wantsPolicy) {
+    return [{ name: 'consultar_conhecimento', params: { termo: userMessage } }];
+  }
+
+  const prefetch = getPasseiosPrefetchPlan(userMessage, context);
+  const termo = prefetch?.wantsAll ? undefined : prefetch?.termo;
+
+  if (t.includes('valores') || t.includes('catalogo') || t.includes('catálogo') || t.includes('todos os passeios') || t.includes('todas as opcoes') || t.includes('todas opcoes')) {
+    return [{ name: 'consultar_passeios', params: {} }];
+  }
+
+  if (termo) {
+    return [{ name: 'consultar_passeios', params: { termo } }];
+  }
+
+  return [{ name: 'consultar_passeios', params: {} }];
+}
+
+async function runPlannerToolPhase(params: {
+  telefone: string;
+  userMessage: string;
+  context: ConversationContext;
+  allowedTools: Set<ToolName>;
+}) {
+  const { telefone, userMessage, context, allowedTools } = params;
+
+  const plannerMessages: ChatMessage[] = [
+    { role: 'system', content: buildPlannerPrompt(context) },
+    { role: 'user', content: userMessage }
+  ];
+
+  let decision: PlannerDecision | undefined;
+  try {
+    const raw = await groqChat({ messages: plannerMessages, temperature: 0.05, max_tokens: 220 });
+    decision = parsePlannerDecision(raw);
+  } catch {
+    decision = undefined;
+  }
+
+  if (decision?.action === 'reply' && typeof decision.reply === 'string' && decision.reply.trim()) {
+    return { kind: 'reply' as const, text: stripEmojis(decision.reply.trim()) };
+  }
+
+  let toolCalls = (decision?.action === 'tool' ? (decision?.tool_calls || []) : []).filter((c) => allowedTools.has(c.name));
+  if (!toolCalls.length) {
+    toolCalls = buildHeuristicToolCalls(userMessage, context).filter((c) => allowedTools.has(c.name));
+  }
+
+  const executed = await Promise.all(
+    toolCalls.map(async (call) => {
+      const name = call.name;
+      const toolParams = enrichToolParams(name, call.params || {}, context);
+
+      let result: any;
+      try {
+        const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('Tool execution timed out')), 10000));
+        result = await Promise.race([
+          executeTool(name, toolParams, { telefone, conversation: context }),
+          timeoutPromise
+        ]);
+      } catch {
+        result = {
+          success: false,
+          error: { code: 'timeout', message: 'A ferramenta demorou muito para responder.' }
+        };
+      }
+
+      const tag = `<tool_result name="${name}">${JSON.stringify(result)}</tool_result>`;
+      return { name, result, tag };
+    })
+  );
+
+  executed.forEach((r) => context.conversationHistory.push({ role: 'system', content: r.tag }));
+
+  const wantsMenu = decision?.wants_menu === true || (() => {
+    const t = normalizeWhatsApp(userMessage);
+    if (!t) return false;
+    const cues = ['opcoes','opcao','catalogo','valores','valor','preco','quanto','custa','passeio','passeios','barco','buggy','quadriciclo','mergulho','transfer','city','combo'];
+    return cues.some((c) => t.includes(c));
+  })();
+
+  const hadCatalog = executed.some(
+    (r) => (r.name === 'consultar_passeios' || r.name === 'buscar_passeio_especifico') && r.result?.success
+  );
+
+  if (wantsMenu && hadCatalog) {
+    const options = Array.isArray(context.tempData?.optionList) ? context.tempData.optionList : [];
+    const lines = formatOptionsMenuLines(options);
+    if (lines) {
+      const hint = (context.tempData as any)?.typoHint;
+      if (hint) delete (context.tempData as any).typoHint;
+      const prefix = hint === 'braco' ? 'Você quis dizer passeio de barco?\n' : '';
+      return { kind: 'menu' as const, text: `${prefix}Passeios disponíveis:\n${lines}\n\nResponda o número.` };
+    }
+  }
+
+  const todayISO = getBrazilTodayISO();
+  const systemPrompt = buildSystemPrompt(todayISO);
+  const state = buildStateSummary(context);
+  const evidence = `DADOS DAS FERRAMENTAS (não mostrar ao cliente):\n${executed.map((r) => r.tag).join('\n')}\n\nResponda agora ao cliente em texto curto, calmo e vendedor, sem emojis, sem JSON e sem tags internas.`;
+
+  const replyRaw = await groqChat({
+    messages: [
+      { role: 'system', content: systemPrompt },
+      { role: 'system', content: state },
+      { role: 'system', content: evidence },
+      { role: 'user', content: userMessage }
+    ],
+    temperature: 0.18,
+    max_tokens: 380
+  });
+
+  const cleaned = stripEmojis(stripToolBlocks(stripDeepSeekThink(replyRaw)));
+
+  return { kind: 'reply' as const, text: cleaned || 'Desculpe, tive uma instabilidade. Pode enviar novamente sua solicitação em uma frase?' };
+}
+
+function looksLikePriceDispute(text: string) {
+  const t = normalizeWhatsApp(text);
+  if (!t) return false;
+  if (t.includes('por que') || t.includes('pq')) {
+    if (t.includes('valor') || t.includes('preco') || t.includes('preço') || t.includes('custa') || t.match(/\br\$\b/i) || /\d+[\.,]\d{2}/.test(t)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export async function runAgentLoop(params: {
   telefone: string;
   userMessage: string;
   context: ConversationContext;
 }) {
-  const { telefone, userMessage, context } = params;
+  const { telefone, context } = params;
+  const originalUserMessage = params.userMessage;
+  let effectiveUserMessage = originalUserMessage;
   const loopStartTime = Date.now();
   const GLOBAL_TIMEOUT_MS = 25000;
 
   context.conversationHistory ||= [];
   context.tempData ||= {};
 
-  context.conversationHistory.push({ role: 'user', content: userMessage });
+  const nowISO = new Date().toISOString();
+  const rawLower = String(originalUserMessage || '').toLowerCase();
+
+  const isYes = (msg: string) => {
+    const t = normalizeWhatsApp(msg);
+    if (!t) return false;
+    return ['sim', 'isso', 'exato', 'correto', 's', 'ss', 'barco'].includes(t) || t.startsWith('sim ') || t === 'isso ai' || t === 'isso mesmo';
+  };
+
+  const awaitingTerm = String((context.tempData as any)?.awaitingTypoConfirmTerm || '').trim();
+  const awaitingAt = String((context.tempData as any)?.awaitingTypoConfirmAt || '').trim();
+  const awaitingAgeOk = (() => {
+    if (!awaitingAt) return false;
+    const ts = Date.parse(awaitingAt);
+    if (!Number.isFinite(ts)) return false;
+    return (Date.now() - ts) <= 10 * 60 * 1000;
+  })();
+
+  if (awaitingTerm && awaitingAgeOk && isYes(originalUserMessage)) {
+    (context.tempData as any).awaitingTypoConfirmTerm = undefined;
+    (context.tempData as any).awaitingTypoConfirmAt = undefined;
+    effectiveUserMessage = awaitingTerm;
+  } else if (awaitingTerm && !awaitingAgeOk) {
+    (context.tempData as any).awaitingTypoConfirmTerm = undefined;
+    (context.tempData as any).awaitingTypoConfirmAt = undefined;
+  }
+
+  if (rawLower.includes('braco') && !rawLower.includes('barco')) {
+    (context.tempData as any).awaitingTypoConfirmTerm = 'barco';
+    (context.tempData as any).awaitingTypoConfirmAt = nowISO;
+    const clarification = "O senhor está falando de barco? Você digitou 'braco'.";
+    context.conversationHistory.push({ role: 'user', content: originalUserMessage });
+    context.conversationHistory.push({ role: 'assistant', content: clarification });
+    return clarification;
+  }
+
+  let userMessage = effectiveUserMessage;
+
+  context.conversationHistory.push({ role: 'user', content: originalUserMessage });
 
   updateSlotsFromUserMessage(context, userMessage);
+
+  if (looksLikePriceDispute(originalUserMessage) && context.tempData?.passeioNome && context.tempData?.numPessoas != null) {
+    try {
+      const match = await executeTool('buscar_passeio_especifico', { termo: context.tempData.passeioNome }, { telefone, conversation: context });
+      const tag = `<tool_result name="buscar_passeio_especifico">${JSON.stringify(match)}</tool_result>`;
+      context.conversationHistory.push({ role: 'system', content: tag });
+
+      const p = Array.isArray(match?.data) ? match.data[0] : undefined;
+      const unit = p?.preco_min != null ? Number(p.preco_min) : (p?.preco_max != null ? Number(p.preco_max) : undefined);
+      const qtd = context.tempData.numPessoas;
+      if (unit != null && Number.isFinite(unit) && qtd != null) {
+        const total = unit * qtd;
+        const unitBRL = `R$ ${unit.toFixed(2).replace('.', ',')}`;
+        const totalBRL = `R$ ${total.toFixed(2).replace('.', ',')}`;
+        const reply = `O valor é ${unitBRL} por pessoa. Para ${qtd} pessoa(s) dá ${totalBRL}. Quer seguir com a reserva?`;
+        context.conversationHistory.push({ role: 'assistant', content: reply });
+        return reply;
+      }
+    } catch {
+      // fall through
+    }
+  }
+
   const justSelected = handleOptionSelection(context, userMessage);
 
   if (justSelected) {
-    const directReply = buildPostSelectionResponse(context);
-    context.conversationHistory.push({ role: 'assistant', content: directReply });
-    return directReply;
+    const todayISO = getBrazilTodayISO();
+    const nome = context.nome;
+    const dataISO = context.tempData?.data;
+    const pessoas = context.tempData?.numPessoas;
+
+    const missing: string[] = [];
+    if (!nome) missing.push('seu nome');
+
+    const dateLooksValid = !!(dataISO && /^\d{4}-\d{2}-\d{2}$/.test(dataISO) && dataISO >= todayISO);
+    if (!dateLooksValid || !context.tempData?.dataUpdatedAt) missing.push('a data');
+
+    if (pessoas == null || !context.tempData?.numPessoasUpdatedAt) missing.push('quantas pessoas');
+
+    if (missing.length) {
+      const directReply = buildPostSelectionResponse(context);
+      context.conversationHistory.push({ role: 'assistant', content: directReply });
+      return directReply;
+    }
+
+    try {
+      const result = await executeTool('criar_reserva', {}, { telefone, conversation: context });
+      const tag = `<tool_result name="criar_reserva">${JSON.stringify(result)}</tool_result>`;
+      context.conversationHistory.push({ role: 'system', content: tag });
+
+      if (result?.success) {
+        const data = result.data || {};
+        const passeioNome = data.passeio_nome || context.tempData?.passeioNome || 'o passeio';
+        const when = data.data || context.tempData?.data || '';
+        const np = data.num_pessoas || context.tempData?.numPessoas;
+        const total = typeof data.valor_total === 'number' ? `R$ ${data.valor_total.toFixed(2).replace('.', ',')}` : undefined;
+        const line1 = `Reserva criada: ${passeioNome} — ${formatISOToBR(when)} (${np} pessoa(s)).`;
+        const line2 = total ? `Total: ${total}.` : '';
+        const line3 = 'PIX ou BOLETO?';
+        const reply = [line1, line2, line3].filter(Boolean).join('\n');
+        context.conversationHistory.push({ role: 'assistant', content: reply });
+        return reply;
+      }
+
+      const directReply = buildPostSelectionResponse(context);
+      context.conversationHistory.push({ role: 'assistant', content: directReply });
+      return directReply;
+    } catch {
+      const directReply = buildPostSelectionResponse(context);
+      context.conversationHistory.push({ role: 'assistant', content: directReply });
+      return directReply;
+    }
   }
 
   const looseIdx = extractOptionIndexLoose(userMessage);
@@ -884,13 +1254,12 @@ export async function runAgentLoop(params: {
   const maxSteps = 8;
   let hasToolResultThisRun = false;
 
-  const mustUseTool = shouldForceToolForUserMessage(userMessage);
-  if (mustUseTool) {
-    context.conversationHistory.push({
-      role: 'system',
-      content:
-        'INSTRUÇÃO: Antes de responder ao cliente, faça pelo menos uma chamada de ferramenta. Se o cliente pediu valores/opções/catálogo, use [TOOL:consultar_passeios]{}[/TOOL]. Se for regra/política/logística, use [TOOL:consultar_conhecimento]{"termo":"..."}[/TOOL]. Responda APENAS com um bloco [TOOL:...]...[/TOOL].'
-    });
+  try {
+    const planned = await runPlannerToolPhase({ telefone, userMessage, context, allowedTools });
+    context.conversationHistory.push({ role: 'assistant', content: planned.text });
+    return planned.text;
+  } catch {
+    // continue to legacy loop
   }
 
   for (let step = 0; step < maxSteps; step++) {
@@ -1027,7 +1396,12 @@ export async function runAgentLoop(params: {
       if (wantsMenu && hadCatalog) {
         const options = Array.isArray(context.tempData?.optionList) ? context.tempData.optionList : [];
         const lines = formatOptionsMenuLines(options);
-        if (lines) return `Passeios disponíveis:\n${lines}\n\nResponda o número.`;
+        if (lines) {
+          const hint = (context.tempData as any)?.typoHint;
+          if (hint) delete (context.tempData as any).typoHint;
+          const prefix = hint === 'braco' ? 'Você quis dizer passeio de barco?\n' : '';
+          return `${prefix}Passeios disponíveis:\n${lines}\n\nResponda o número.`;
+        }
       }
 
       context.conversationHistory.push({

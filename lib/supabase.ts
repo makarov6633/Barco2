@@ -87,6 +87,12 @@ export interface ConversationContext {
     reservaId?: string;
     valorTotal?: number;
     passeioNome?: string;
+    passeioSelectedAt?: string;
+    dataUpdatedAt?: string;
+    numPessoasUpdatedAt?: string;
+    nomeUpdatedAt?: string;
+    awaitingTypoConfirmTerm?: string;
+    awaitingTypoConfirmAt?: string;
   };
   lastIntent?: string;
   lastMessage?: string;

@@ -113,6 +113,7 @@ function applyQueryExpansions(value?: string) {
   s = s.replace(/\bprx\b/g, 'proximo');
   s = s.replace(/\bprox\b/g, 'proximo');
   s = s.replace(/\bbarc\b/g, 'barco');
+  s = s.replace(/\bbraco\b/g, 'barco');
   s = s.replace(/\bopenbar\b/g, 'open bar');
   s = s.replace(/\bopenfood\b/g, 'open food');
 
